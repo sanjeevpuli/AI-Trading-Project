@@ -1,0 +1,119 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String             @id @default(uuid())
+  email            String             @unique
+  password         String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  portfolios       Portfolio[]
+  trades           Trade[]
+  positions        Position[]
+  watchlist        Watchlist?
+  metricsHistory   PortfolioMetrics[]
+  executionLogs    ExecutionLog[]
+}
+
+model Portfolio {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalValue    Float    @default(100000.0)
+  cash          Float    @default(100000.0)
+  unrealizedPnL Float    @default(0.0)
+  realizedPnL   Float    @default(0.0)
+  winRate       Float    @default(0.0)
+  sharpeRatio   Float    @default(0.0)
+  maxDrawdown   Float    @default(0.0)
+  leverage      Float    @default(1.0)
+  exposure      Float    @default(0.0)
+  netBeta       Float    @default(0.0)
+  valueAtRisk   Float    @default(0.0)
+  equityCurve   Json     @default("[]") // [{ time: string, value: number }]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Trade {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol        String
+  type          String   // "LONG" | "SHORT"
+  entryPrice    Float
+  exitPrice     Float
+  amount        Float
+  pnl           Float
+  pnlPercentage Float
+  entryTime     DateTime
+  exitTime      DateTime
+  exitReason    String   // "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT"
+  fee           Float    @default(0.0)
+  slippage      Float    @default(0.0)
+  createdAt     DateTime @default(now())
+}
+
+model Position {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol        String
+  type          String   // "LONG" | "SHORT"
+  entryPrice    Float
+  currentPrice  Float
+  amount        Float
+  stopLoss      Float?
+  takeProfit    Float?
+  timestamp     DateTime @default(now())
+  pnl           Float    @default(0.0)
+  pnlPercentage Float    @default(0.0)
+}
+
+model AgentSignal {
+  id         String   @id @default(uuid())
+  symbol     String
+  agentId    String
+  type       String   // "BUY" | "SELL" | "HOLD"
+  confidence Float
+  reason     String
+  riskScore  Float
+  timestamp  DateTime @default(now())
+}
+
+model PortfolioMetrics {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timestamp     DateTime @default(now())
+  totalValue    Float
+  cash          Float
+  realizedPnL   Float
+  unrealizedPnL Float
+  drawDown      Float
+}
+
+model Watchlist {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbols   String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ExecutionLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  level     String   // "INFO" | "WARNING" | "ERROR"
+  message   String
+  details   String?
+  timestamp DateTime @default(now())
+}
