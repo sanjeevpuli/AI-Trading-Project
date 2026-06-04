@@ -86,7 +86,7 @@ export default function ChartSection() {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col h-[520px]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 gap-2 border-b border-zinc-800 shrink-0">
         <div className="flex items-center gap-3">
           <div className="h-6 w-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
             <span className="text-amber-400 text-xs font-bold">₿</span>
@@ -98,7 +98,7 @@ export default function ChartSection() {
         </div>
 
         {/* Timeframe switcher */}
-        <div className="flex gap-1 bg-zinc-950 rounded-md p-0.5 border border-zinc-800">
+        <div className="flex gap-1 bg-zinc-950 rounded-md p-0.5 border border-zinc-800 self-end sm:self-auto">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.interval}

@@ -1,6 +1,51 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 
+// POST – write/upsert a trade record
+export async function POST(request: Request) {
+  try {
+    const trade = await request.json();
+    if (!trade?.id) {
+      return NextResponse.json({ ok: true, skipped: true });
+    }
+    await prisma.trade.upsert({
+      where: { id: trade.id },
+      create: {
+        id: trade.id,
+        userId: trade.userId ?? "",
+        symbol: trade.symbol,
+        type: trade.type,
+        entryPrice: trade.entryPrice,
+        exitPrice: trade.exitPrice,
+        amount: trade.amount,
+        pnl: trade.pnl,
+        pnlPercentage: trade.pnlPercentage,
+        entryTime: new Date(trade.entryTime),
+        exitTime: new Date(trade.exitTime),
+        exitReason: trade.exitReason,
+        fee: trade.fee,
+        slippage: trade.slippage,
+      },
+      update: {
+        exitPrice: trade.exitPrice,
+        exitTime: new Date(trade.exitTime),
+        exitReason: trade.exitReason,
+        pnl: trade.pnl,
+        pnlPercentage: trade.pnlPercentage,
+        fee: trade.fee,
+        slippage: trade.slippage,
+      },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('POST /api/trades error:', error);
+    return NextResponse.json({ ok: false, error: String(error) });
+  }
+}
+
+// GET – return mock trades data (read‑only)
 export async function GET() {
+
   const tradesState = {
     activePositions: [
       {

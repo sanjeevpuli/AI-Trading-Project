@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 
 export async function GET() {
   const portfolioState = {
@@ -21,4 +22,35 @@ export async function GET() {
       "Cache-Control": "no-store, max-age=0",
     },
   });
+}
+
+export async function POST(request: Request) {
+  try {
+    const portfolio = await request.json();
+    if (!portfolio?.id) {
+      return NextResponse.json({ ok: true, skipped: true });
+    }
+    await prisma.portfolio.update({
+      where: { id: portfolio.id },
+      data: {
+        totalValue: portfolio.totalValue,
+        cash: portfolio.cash,
+        unrealizedPnL: portfolio.unrealizedPnL,
+        realizedPnL: portfolio.realizedPnL,
+        winRate: portfolio.winRate,
+        sharpeRatio: portfolio.sharpeRatio,
+        maxDrawdown: portfolio.maxDrawdown,
+        leverage: portfolio.leverage,
+        exposure: portfolio.exposure,
+        netBeta: portfolio.netBeta,
+        valueAtRisk: portfolio.valueAtRisk,
+        equityCurve: portfolio.equityCurve,
+      },
+    });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("POST /api/portfolio error:", error);
+    // Return 200 so client-side fire-and-forget doesn't throw
+    return NextResponse.json({ ok: false, error: String(error) });
+  }
 }
