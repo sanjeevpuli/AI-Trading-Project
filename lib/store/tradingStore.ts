@@ -8,9 +8,6 @@ import { coordinateAgentConsensus } from "../services/agentCoordinator";
 import { SocketStatus } from "../services/binanceService";
 
 interface TradingStore {
-  // Navigation & UI state
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   selectedAsset: string;
   setSelectedAsset: (symbol: string) => void;
   
@@ -50,15 +47,11 @@ export const useTradingStore = create<TradingStore>((set, get) => {
   const savedBalance = isClient ? localStorage.getItem("quant_balance_z") : null;
   const savedPositions = isClient ? localStorage.getItem("quant_positions_z") : null;
   const savedHistory = isClient ? localStorage.getItem("quant_history_z") : null;
-  const savedTab = isClient ? localStorage.getItem("quant_tab_z") : null;
 
   const initialBalance = savedBalance ? parseFloat(savedBalance) : INITIAL_BALANCE;
   const initialPositions = savedPositions ? JSON.parse(savedPositions) : [];
   const initialHistory = savedHistory ? JSON.parse(savedHistory) : SEED_CLOSED_TRADES;
-  // Always start with "dashboard" — reading from localStorage here causes SSR/client hydration
-  // mismatch because the server never has localStorage. The client will re-sync on first render
-  // via setActiveTab which already persists to localStorage.
-  const initialTab = "dashboard";
+
 
   // Pre-seed agent diagnostic states matching the beautiful UI
   const initialDiagnostics: AgentDiagnostic[] = [
@@ -140,8 +133,6 @@ export const useTradingStore = create<TradingStore>((set, get) => {
   ];
 
   return {
-    // Initial states
-    activeTab: initialTab,
     selectedAsset: "BTCUSDT",
     prices: { BTCUSDT: 68210.0, ETHUSDT: 3850.5, SOLUSDT: 164.2 },
     priceChanges: { BTCUSDT: 0.8, ETHUSDT: 1.5, SOLUSDT: -1.2 },
@@ -155,10 +146,6 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     latestConsensusConfidence: 50,
 
     // UI Tab & Asset actions
-    setActiveTab: (tab) => {
-      set({ activeTab: tab });
-      if (isClient) localStorage.setItem("quant_tab_z", tab);
-    },
     setSelectedAsset: (symbol) => set({ selectedAsset: symbol }),
     updateSocketStatus: (status) => set({ socketStatus: status }),
 

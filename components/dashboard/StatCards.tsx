@@ -2,12 +2,32 @@
 
 import { useTradingStore } from "@/lib/store/tradingStore";
 import { formatPrice, formatPercentage } from "@/lib/binance";
+import { useEffect, useState } from "react";
 
 export default function StatCards() {
   const balance = useTradingStore((s) => s.balance);
   const positions = useTradingStore((s) => s.positions);
   const agentDiagnostics = useTradingStore((s) => s.agentDiagnostics);
   const socketStatus = useTradingStore((s) => s.socketStatus);
+
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 animate-pulse h-[102px]">
+            <div className="h-4 w-24 bg-zinc-800 rounded mb-2" />
+            <div className="h-6 w-32 bg-zinc-800 rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   // Compute live unrealized PnL across all open positions
   const unrealizedPnL = positions.reduce((sum, p) => sum + p.pnl, 0);

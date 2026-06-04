@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useTradingStore } from "@/lib/store/tradingStore";
 import RiskMetricsGrid from "./RiskMetricsGrid";
 import AllocationChart from "./AllocationChart";
@@ -11,6 +11,23 @@ export default function PortfolioAnalytics() {
   const getStats = useTradingStore((s) => s.getStats);
   const resetStore = useTradingStore((s) => s.resetStore);
   const socketStatus = useTradingStore((s) => s.socketStatus);
+
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] w-full">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 border-4 border-zinc-800 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-zinc-500 text-sm font-medium animate-pulse">Loading portfolio...</p>
+        </div>
+      </div>
+    );
+  }
 
   const stats = getStats();
 

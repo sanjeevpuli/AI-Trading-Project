@@ -2,6 +2,7 @@
 
 import { useTradingStore } from "@/lib/store/tradingStore";
 import { formatPrice, formatPercentage } from "@/lib/binance";
+import { useRouter } from "next/navigation";
 
 const WATCHLIST_SYMBOLS = [
   { symbol: "BTCUSDT", icon: "₿", color: "text-amber-500" },
@@ -14,7 +15,7 @@ export default function Watchlist() {
   const priceChanges = useTradingStore((s) => s.priceChanges);
   const socketStatus = useTradingStore((s) => s.socketStatus);
   const setSelectedAsset = useTradingStore((s) => s.setSelectedAsset);
-  const setActiveTab = useTradingStore((s) => s.setActiveTab);
+  const router = useRouter();
 
   const isConnected = socketStatus === "CONNECTED";
   const isLoading = socketStatus === "CONNECTING";
@@ -51,7 +52,7 @@ export default function Watchlist() {
                 key={symbol}
                 onClick={() => {
                   setSelectedAsset(symbol);
-                  setActiveTab("trading");
+                  router.push("/trading");
                 }}
                 className="p-4 hover:bg-zinc-800/20 transition-colors cursor-pointer flex justify-between items-center group"
               >
