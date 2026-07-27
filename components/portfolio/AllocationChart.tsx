@@ -47,7 +47,15 @@ export default function AllocationChart() {
   const radius = 50;
   const strokeWidth = 14;
   const circumference = 2 * Math.PI * radius;
-  let accumulated = 0;
+  
+  const { itemsWithAccumulated } = allocationItems.reduce(
+    (acc, item) => {
+      acc.itemsWithAccumulated.push({ ...item, accumulated: acc.currentAccumulated });
+      acc.currentAccumulated += item.percentage;
+      return acc;
+    },
+    { currentAccumulated: 0, itemsWithAccumulated: [] as (AllocationItem & { accumulated: number })[] }
+  );
 
   const activeItem =
     hoveredIndex !== null
@@ -68,11 +76,10 @@ export default function AllocationChart() {
             {/* Background ring */}
             <circle cx="60" cy="60" r={radius} fill="transparent" stroke="#18181b" strokeWidth={strokeWidth} />
 
-            {allocationItems.map((item, idx) => {
+            {itemsWithAccumulated.map((item, idx) => {
               if (item.percentage <= 0) return null;
               const dashLength = (item.percentage / 100) * circumference;
-              const dashOffset = circumference - (accumulated / 100) * circumference;
-              accumulated += item.percentage;
+              const dashOffset = circumference - (item.accumulated / 100) * circumference;
               const isHovered = hoveredIndex === idx;
 
               return (

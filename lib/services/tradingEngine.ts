@@ -29,7 +29,7 @@ export function executeSimulatedOrder(
   error?: string;
 } {
   const marketPrice = order.price;
-  const { percentage: slippagePct, amount: slippageAmount } = calculateSlippage(marketPrice);
+  const { amount: slippageAmount } = calculateSlippage(marketPrice);
 
   // Apply slippage to entry price
   // BUY (LONG) -> Executed slightly higher

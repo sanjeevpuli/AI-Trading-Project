@@ -2,7 +2,7 @@
 
 interface StreamMessage {
   stream: string;
-  data: any;
+  data: Record<string, string | number | boolean | Record<string, string | number | boolean>>;
 }
 
 export type SocketStatus = "CONNECTING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
@@ -91,23 +91,24 @@ class BinanceWebsocketService {
   }
 
   private handleStreamMessage(msg: StreamMessage) {
-    const { stream, data } = msg;
+    const stream = msg.stream;
+    const data = msg.data as unknown as Record<string, unknown>;
 
     // Handle ticker updates
     if (stream.endsWith("@ticker")) {
-      const symbol = data.s; // e.g. BTCUSDT
-      const lastPrice = parseFloat(data.c); // current close
-      const changePercent = parseFloat(data.P); // percentage change
+      const symbol = data.s as string; // e.g. BTCUSDT
+      const lastPrice = parseFloat(data.c as string); // current close
+      const changePercent = parseFloat(data.P as string); // percentage change
       
       this.tickerCallbacks.forEach((cb) => cb(symbol, lastPrice, changePercent));
     }
 
     // Handle kline updates
     if (stream.endsWith("@kline_1m")) {
-      const symbol = data.s;
-      const kline = data.k;
-      const closePrice = parseFloat(kline.c);
-      const isClosed = kline.x; // true if candle closed
+      const symbol = data.s as string;
+      const kline = data.k as Record<string, unknown>;
+      const closePrice = parseFloat(kline.c as string);
+      const isClosed = kline.x as boolean; // true if candle closed
 
       if (isClosed) {
         // Append price and keep history at max 100 elements to save space

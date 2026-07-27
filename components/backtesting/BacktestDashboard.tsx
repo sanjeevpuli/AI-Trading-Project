@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { runBacktest } from "@/lib/services/backtestEngine";
 
+interface BacktestResult {
+  totalTrades: number;
+  winRate: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  finalEquity: number;
+}
+
 export default function BacktestDashboard() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [startDate, setStartDate] = useState("2023-01-01");
   const [endDate, setEndDate] = useState("2023-12-31");
   const [capital, setCapital] = useState(10000);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleRun = async () => {

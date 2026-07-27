@@ -45,3 +45,16 @@ export async function syncPosition(position: Position) {
     console.error('Failed to sync position:', error);
   }
 }
+
+/**
+ * Delete a position (when closed) via API route.
+ */
+export async function deletePosition(id: string) {
+  try {
+    await fetch(`/api/positions?id=${id}`, {
+      method: 'DELETE',
+    });
+  } catch (error) {
+    console.error('Failed to delete position:', error);
+  }
+}

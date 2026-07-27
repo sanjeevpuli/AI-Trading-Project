@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { formatPercentage } from "@/lib/binance";
 
 interface Agent {
   id: string;

@@ -1,6 +1,9 @@
-import { agentActivities } from "@/lib/mockData";
+"use client";
+
+import { useTradingStore } from "@/lib/store/tradingStore";
 
 export default function AgentActivity() {
+  const diagnostics = useTradingStore((s) => s.agentDiagnostics);
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col h-[400px]">
       <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
@@ -14,19 +17,19 @@ export default function AgentActivity() {
         </span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {agentActivities.map((activity) => (
-          <div key={activity.id} className="flex gap-3 text-sm">
+        {diagnostics.map((agent) => (
+          <div key={agent.id} className="flex gap-3 text-sm">
             <div className="mt-0.5">
-              {activity.type === 'success' && <div className="text-emerald-500">✓</div>}
-              {activity.type === 'warning' && <div className="text-amber-500">!</div>}
-              {activity.type === 'info' && <div className="text-blue-500">i</div>}
+              {agent.status === 'EXECUTING' && <div className="text-emerald-500">✓</div>}
+              {agent.status === 'ACTIVE' && <div className="text-blue-500">i</div>}
+              {agent.status !== 'EXECUTING' && agent.status !== 'ACTIVE' && <div className="text-amber-500">!</div>}
             </div>
             <div>
               <div className="flex items-baseline gap-2">
-                <span className="font-medium text-zinc-200">{activity.agent}</span>
-                <span className="text-xs text-zinc-500">{activity.time}</span>
+                <span className="font-medium text-zinc-200">{agent.name}</span>
+                <span className="text-xs text-zinc-500">{agent.status}</span>
               </div>
-              <p className="text-zinc-400 mt-0.5">{activity.action}</p>
+              <p className="text-zinc-400 mt-0.5">{agent.activity[0] || "Waiting for market data..."}</p>
             </div>
           </div>
         ))}

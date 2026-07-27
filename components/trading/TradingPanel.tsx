@@ -33,6 +33,7 @@ export default function TradingPanel() {
     if (currentPrice > 0) {
       if (useSl && !slPrice) {
         const offset = orderType === "LONG" ? 0.95 : 1.05;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSlPrice((currentPrice * offset).toFixed(2));
       }
       if (useTp && !tpPrice) {
@@ -40,10 +41,11 @@ export default function TradingPanel() {
         setTpPrice((currentPrice * offset).toFixed(2));
       }
     }
-  }, [useSl, useTp, currentPrice, orderType]);
+  }, [useSl, useTp, currentPrice, orderType, slPrice, tpPrice]);
 
   // Reset SL/TP when switching asset or direction
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSlPrice("");
     setTpPrice("");
   }, [orderType, selectedAsset]);

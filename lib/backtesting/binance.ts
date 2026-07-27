@@ -38,13 +38,13 @@ export async function fetchHistoricalKlines(
     const data = await response.json();
     if (data.length === 0) break;
 
-    const formattedData: KlineData[] = data.map((candle: any[]) => ({
-      time: candle[0],
-      open: parseFloat(candle[1]),
-      high: parseFloat(candle[2]),
-      low: parseFloat(candle[3]),
-      close: parseFloat(candle[4]),
-      volume: parseFloat(candle[5]),
+    const formattedData: KlineData[] = data.map((candle: (string | number)[]) => ({
+      time: candle[0] as number,
+      open: parseFloat(candle[1] as string),
+      high: parseFloat(candle[2] as string),
+      low: parseFloat(candle[3] as string),
+      close: parseFloat(candle[4] as string),
+      volume: parseFloat(candle[5] as string),
     }));
 
     allKlines = allKlines.concat(formattedData);

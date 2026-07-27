@@ -17,13 +17,15 @@ async function fetchKlines(symbol: string, interval: string = "15m", limit: numb
   const data = await response.json();
   // Binance kline array format: [Open time, Open, High, Low, Close, ...]
   // We just need the closing prices
-  return data.map((candle: any[]) => parseFloat(candle[4]));
+  return data.map((candle: (string | number)[]) => parseFloat(candle[4] as string));
 }
 
 export function useSignals(symbols: string[], refreshIntervalMs: number = 10000) {
   const [signals, setSignals] = useState<AISignal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const symbolsKey = symbols.join(",");
 
   useEffect(() => {
     let isMounted = true;
@@ -61,7 +63,8 @@ export function useSignals(symbols: string[], refreshIntervalMs: number = 10000)
       isMounted = false;
       clearTimeout(timeoutId);
     };
-  }, [symbols.join(","), refreshIntervalMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolsKey, refreshIntervalMs]);
 
   return { signals, isLoading, error };
 }

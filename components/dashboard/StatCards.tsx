@@ -1,7 +1,7 @@
 "use client";
 
 import { useTradingStore } from "@/lib/store/tradingStore";
-import { formatPrice, formatPercentage } from "@/lib/binance";
+import { formatPrice } from "@/lib/binance";
 import { useEffect, useState } from "react";
 
 export default function StatCards() {
@@ -13,6 +13,7 @@ export default function StatCards() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 

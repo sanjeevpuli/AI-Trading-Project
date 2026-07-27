@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import WebSocketInitializer from "@/components/WebSocketInitializer";
+import { AuthProvider } from "@/context/AuthContext";
 
 export const metadata: Metadata = {
   title: "QuantAI — AI Trading Dashboard",
-  description: "Professional AI-powered trading dashboard with live agent monitoring, market watchlist, and automated trade execution.",
+  description:
+    "Professional AI-powered trading dashboard with live agent monitoring, market watchlist, and automated trade execution.",
 };
 
 export default function RootLayout({
@@ -19,8 +21,10 @@ export default function RootLayout({
       className="h-full antialiased font-sans"
     >
       <body className="h-full" suppressHydrationWarning>
-        <WebSocketInitializer />
-        {children}
+        <AuthProvider>
+          <WebSocketInitializer />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

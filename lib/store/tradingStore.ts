@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { Position, Trade, AgentSignal, AgentDiagnostic, PortfolioStats, Portfolio } from "../types/trading";
 import { executeSimulatedOrder, closeSimulatedPosition } from "../services/tradingEngine";
-import { syncPortfolio, syncTrade, syncPosition } from "../services/dbSync";
+import { syncPortfolio, syncTrade, syncPosition, deletePosition } from "../services/dbSync";
 import { calculatePortfolioStats, SEED_CLOSED_TRADES } from "../services/portfolioService";
 import { validateOrderExecution, checkMarginLiquidation } from "../services/riskManager";
 import { coordinateAgentConsensus } from "../services/agentCoordinator";
@@ -151,184 +151,182 @@ export const useTradingStore = create<TradingStore>((set, get) => {
 
     // High frequency price updater (WebSockets ticker stream)
     updatePrice: (symbol, price, changePercent) => {
-      set((state) => {
-        const nextPrices = { ...state.prices, [symbol]: price };
-        const nextPriceChanges = { ...state.priceChanges, [symbol]: changePercent };
-        
-        let nextBalance = state.balance;
-        let nextHistory = [...state.history];
-        let closedPositions: string[] = [];
+      const state = get();
+      const nextPrices = { ...state.prices, [symbol]: price };
+      const nextPriceChanges = { ...state.priceChanges, [symbol]: changePercent };
+      
+      let nextBalance = state.balance;
+      let nextHistory = [...state.history];
+      const closedPositions: string[] = [];
 
-        // 1. Recalculate all open positions based on new mark-prices
-        const nextPositions = state.positions.map((pos) => {
-          if (pos.symbol !== symbol) return pos;
+      // 1. Recalculate all open positions based on new mark-prices
+      const nextPositions = state.positions.map((pos) => {
+        if (pos.symbol !== symbol) return pos;
 
-          // Compute unrealized pnl
-          let pnl = 0;
-          if (pos.type === "LONG") {
-            pnl = (price - pos.entryPrice) * pos.amount;
-          } else {
-            pnl = (pos.entryPrice - price) * pos.amount;
-          }
-
-          const costBasis = pos.entryPrice * pos.amount;
-          const pnlPercentage = (pnl / costBasis) * 100;
-
-          return {
-            ...pos,
-            currentPrice: price,
-            pnl,
-            pnlPercentage,
-          };
-        });
-
-        // 2. Evaluate Automatic SL/TP limits
-        const evaluatedPositions = nextPositions.filter((pos) => {
-          // If not matching symbol, keep it
-          if (pos.symbol !== symbol) return true;
-
-          // Check limits
-          let trigger: "STOP_LOSS" | "TAKE_PROFIT" | null = null;
-          if (pos.type === "LONG") {
-            if (pos.stopLoss && price <= pos.stopLoss) trigger = "STOP_LOSS";
-            if (pos.takeProfit && price >= pos.takeProfit) trigger = "TAKE_PROFIT";
-          } else {
-            if (pos.stopLoss && price >= pos.stopLoss) trigger = "STOP_LOSS";
-            if (pos.takeProfit && price <= pos.takeProfit) trigger = "TAKE_PROFIT";
-          }
-
-          if (trigger) {
-            // Auto close!
-            const { closedTrade, cashReturn } = closeSimulatedPosition(pos, price, trigger);
-            nextBalance += cashReturn;
-            nextHistory = [closedTrade, ...nextHistory];
-            closedPositions.push(pos.id);
-            return false; // Remove from list
-          }
-
-          return true;
-        });
-
-        // 3. Margin safety calculations / liquidation stop-outs
-        const liquidationCheck = checkMarginLiquidation(nextBalance, evaluatedPositions);
-        let finalPositions = evaluatedPositions;
-
-        if (liquidationCheck.liquidateAll) {
-          // Force close all open perp contracts at current mark prices!
-          evaluatedPositions.forEach((pos) => {
-            const currentMarkPrice = nextPrices[pos.symbol] || pos.currentPrice;
-            const { closedTrade, cashReturn } = closeSimulatedPosition(pos, currentMarkPrice, "STOP_LOSS");
-            nextBalance += cashReturn;
-            nextHistory = [closedTrade, ...nextHistory];
-          });
-          finalPositions = [];
-          console.warn(liquidationCheck.message);
+        // Compute unrealized pnl
+        let pnl = 0;
+        if (pos.type === "LONG") {
+          pnl = (price - pos.entryPrice) * pos.amount;
+        } else {
+          pnl = (pos.entryPrice - price) * pos.amount;
         }
 
-        // Persist values to localStorage (client only)
-        if (isClient) {
-          localStorage.setItem("quant_balance_z", nextBalance.toString());
-          localStorage.setItem("quant_positions_z", JSON.stringify(finalPositions));
-          localStorage.setItem("quant_history_z", JSON.stringify(nextHistory));
-        }
+        const costBasis = pos.entryPrice * pos.amount;
+        const pnlPercentage = (pnl / costBasis) * 100;
 
-        // CRITICAL: Must return next state so Zustand doesn't replace the store with undefined.
         return {
-          prices: nextPrices,
-          priceChanges: nextPriceChanges,
-          balance: nextBalance,
-          positions: finalPositions,
-          history: nextHistory,
+          ...pos,
+          currentPrice: price,
+          pnl,
+          pnlPercentage,
         };
+      });
+
+      // 2. Evaluate Automatic SL/TP limits
+      const evaluatedPositions = nextPositions.filter((pos) => {
+        // If not matching symbol, keep it
+        if (pos.symbol !== symbol) return true;
+
+        // Check limits
+        let trigger: "STOP_LOSS" | "TAKE_PROFIT" | null = null;
+        if (pos.type === "LONG") {
+          if (pos.stopLoss && price <= pos.stopLoss) trigger = "STOP_LOSS";
+          if (pos.takeProfit && price >= pos.takeProfit) trigger = "TAKE_PROFIT";
+        } else {
+          if (pos.stopLoss && price >= pos.stopLoss) trigger = "STOP_LOSS";
+          if (pos.takeProfit && price <= pos.takeProfit) trigger = "TAKE_PROFIT";
+        }
+
+        if (trigger) {
+          // Auto close!
+          const { closedTrade, cashReturn } = closeSimulatedPosition(pos, price, trigger);
+          nextBalance += cashReturn;
+          nextHistory = [closedTrade, ...nextHistory];
+          closedPositions.push(pos.id);
+          return false; // Remove from list
+        }
+
+        return true;
+      });
+
+      // 3. Margin safety calculations / liquidation stop-outs
+      const liquidationCheck = checkMarginLiquidation(nextBalance, evaluatedPositions);
+      let finalPositions = evaluatedPositions;
+
+      if (liquidationCheck.liquidateAll) {
+        // Force close all open perp contracts at current mark prices!
+        evaluatedPositions.forEach((pos) => {
+          const currentMarkPrice = nextPrices[pos.symbol] || pos.currentPrice;
+          const { closedTrade, cashReturn } = closeSimulatedPosition(pos, currentMarkPrice, "STOP_LOSS");
+          nextBalance += cashReturn;
+          nextHistory = [closedTrade, ...nextHistory];
+        });
+        finalPositions = [];
+        console.warn(liquidationCheck.message);
+      }
+
+      // Persist values to localStorage (client only)
+      if (isClient) {
+        localStorage.setItem("quant_balance_z", nextBalance.toString());
+        localStorage.setItem("quant_positions_z", JSON.stringify(finalPositions));
+        localStorage.setItem("quant_history_z", JSON.stringify(nextHistory));
+      }
+
+      // Update state
+      set({
+        prices: nextPrices,
+        priceChanges: nextPriceChanges,
+        balance: nextBalance,
+        positions: finalPositions,
+        history: nextHistory,
       });
     },
 
     // Technical Candle stream close updater
     updateKlineClose: (symbol, closePrice, historyPrices) => {
-      set((state) => {
-        // Run AI consensus engine on candle close!
-        const stats = calculatePortfolioStats(state.balance, state.positions, state.history);
-        const decision = coordinateAgentConsensus(
-          symbol,
-          historyPrices,
-          stats.maxDrawdown,
-          stats.exposure
-        );
+      const state = get();
+      // Run AI consensus engine on candle close!
+      const stats = calculatePortfolioStats(state.balance, state.positions, state.history);
+      const decision = coordinateAgentConsensus(
+        symbol,
+        historyPrices,
+        stats.maxDrawdown,
+        stats.exposure
+      );
 
-        // Update diagnostic action scrolling streams in the dashboard
-        const nextDiagnostics = state.agentDiagnostics.map((agent) => {
-          const signal = decision.agentSignals[agent.id];
-          if (!signal) return agent;
+      // Update diagnostic action scrolling streams in the dashboard
+      const nextDiagnostics = state.agentDiagnostics.map((agent) => {
+        const signal = decision.agentSignals[agent.id];
+        if (!signal) return agent;
 
-          // Append new thought based on consensus
-          const currentThoughts = agent.activity;
-          const newThought = `[Auto Signal: ${signal.type}] ${signal.reason}`;
-          const updatedThoughts = [newThought, ...currentThoughts.filter((t) => t !== newThought).slice(0, 2)];
+        // Append new thought based on consensus
+        const currentThoughts = agent.activity;
+        const newThought = `[Auto Signal: ${signal.type}] ${signal.reason}`;
+        const updatedThoughts = [newThought, ...currentThoughts.filter((t) => t !== newThought).slice(0, 2)];
 
-          return {
-            ...agent,
-            confidence: signal.confidence,
-            status: signal.type !== "HOLD" ? "EXECUTING" : "ACTIVE",
-            activity: updatedThoughts,
-          };
-        });
+        return {
+          ...agent,
+          confidence: signal.confidence,
+          status: signal.type !== "HOLD" ? "EXECUTING" : "ACTIVE",
+          activity: updatedThoughts,
+        };
+      });
 
-        // Optional Auto execution of Agent signals (if we want the platform to simulate active trading bots!
-        // That is an absolute WOW factor. If the Technical consensus BUY is generated, we can open a perp position automatically!
-        // Let's implement an automated paper trading executor for AI signals!
-        // This will let the user sit back and watch their bots trade live! Extremely premium.
-        let nextBalance = state.balance;
-        let nextPositions = [...state.positions];
+      // Optional Auto execution of Agent signals (if we want the platform to simulate active trading bots!
+      // That is an absolute WOW factor. If the Technical consensus BUY is generated, we can open a perp position automatically!
+      // Let's implement an automated paper trading executor for AI signals!
+      // This will let the user sit back and watch their bots trade live! Extremely premium.
+      let nextBalance = state.balance;
+      let nextPositions = [...state.positions];
 
-        const alreadyHasAsset = state.positions.some((p) => p.symbol === symbol);
+      const alreadyHasAsset = state.positions.some((p) => p.symbol === symbol);
 
-        if (decision.action !== "HOLD" && !alreadyHasAsset && decision.positionSizePercent > 0) {
-          const targetRiskAllocUsd = (nextBalance * decision.positionSizePercent) / 100;
-          const orderQty = targetRiskAllocUsd / closePrice;
-          
-          // Enforce bounds
-          if (orderQty > 0.0001 && nextBalance >= targetRiskAllocUsd) {
-            const riskCheck = validateOrderExecution(
-              { symbol, type: decision.action === "BUY" ? "LONG" : "SHORT", amount: orderQty, price: closePrice },
-              nextBalance,
-              nextPositions
+      if (decision.action !== "HOLD" && !alreadyHasAsset && decision.positionSizePercent > 0) {
+        const targetRiskAllocUsd = (nextBalance * decision.positionSizePercent) / 100;
+        const orderQty = targetRiskAllocUsd / closePrice;
+        
+        // Enforce bounds
+        if (orderQty > 0.0001 && nextBalance >= targetRiskAllocUsd) {
+          const riskCheck = validateOrderExecution(
+            { symbol, type: decision.action === "BUY" ? "LONG" : "SHORT", amount: orderQty, price: closePrice },
+            nextBalance,
+            nextPositions
+          );
+
+          if (riskCheck.allowed) {
+            // Open position
+            const orderResult = executeSimulatedOrder(
+              {
+                symbol,
+                type: decision.action === "BUY" ? "LONG" : "SHORT",
+                amount: orderQty,
+                price: closePrice,
+                stopLoss: decision.action === "BUY" ? closePrice * 0.96 : closePrice * 1.04,
+                takeProfit: decision.action === "BUY" ? closePrice * 1.08 : closePrice * 0.92,
+              },
+              nextBalance
             );
 
-            if (riskCheck.allowed) {
-              // Open position
-              const orderResult = executeSimulatedOrder(
-                {
-                  symbol,
-                  type: decision.action === "BUY" ? "LONG" : "SHORT",
-                  amount: orderQty,
-                  price: closePrice,
-                  stopLoss: decision.action === "BUY" ? closePrice * 0.96 : closePrice * 1.04,
-                  takeProfit: decision.action === "BUY" ? closePrice * 1.08 : closePrice * 0.92,
-                },
-                nextBalance
-              );
-
-              if (orderResult.success && orderResult.position) {
-                nextBalance -= (orderQty * orderResult.executionPrice + orderResult.fee);
-                nextPositions = [orderResult.position, ...nextPositions];
-                
-                if (isClient) {
-                  localStorage.setItem("quant_balance_z", nextBalance.toString());
-                  localStorage.setItem("quant_positions_z", JSON.stringify(nextPositions));
-                }
+            if (orderResult.success && orderResult.position) {
+              nextBalance -= (orderQty * orderResult.executionPrice + orderResult.fee);
+              nextPositions = [orderResult.position, ...nextPositions];
+              
+              if (isClient) {
+                localStorage.setItem("quant_balance_z", nextBalance.toString());
+                localStorage.setItem("quant_positions_z", JSON.stringify(nextPositions));
               }
             }
           }
         }
+      }
 
-        return {
-          agentDiagnostics: nextDiagnostics as AgentDiagnostic[],
-          agentSignals: { ...state.agentSignals, ...decision.agentSignals },
-          latestConsensusReasoning: decision.reasoning,
-          latestConsensusConfidence: decision.confidence,
-          balance: nextBalance,
-          positions: nextPositions,
-        };
+      set({
+        agentDiagnostics: nextDiagnostics as AgentDiagnostic[],
+        agentSignals: { ...state.agentSignals, ...decision.agentSignals },
+        latestConsensusReasoning: decision.reasoning,
+        latestConsensusConfidence: decision.confidence,
+        balance: nextBalance,
+        positions: nextPositions,
       });
     },
 
@@ -380,7 +378,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           exposure: 0,
           netBeta: 0,
           valueAtRisk: 0,
-          equityCurve: [] as any,
+          equityCurve: [] as { time: string; value: number }[],
         } as Portfolio);
         // Record the trade
         syncTrade({
@@ -400,7 +398,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           slippage: 0,
         } as Trade);
         // Position sync
-        nextPositions.forEach((p) => syncPosition(p as any));
+        nextPositions.forEach((p) => syncPosition(p));
       }
 
       return { success: true };
@@ -446,7 +444,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           exposure: 0,
           netBeta: 0,
           valueAtRisk: 0,
-          equityCurve: [] as any,
+          equityCurve: [] as { time: string; value: number }[],
         } as Portfolio);
         syncTrade({
           id: "",
@@ -464,7 +462,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           fee: 0,
           slippage: 0,
         } as Trade);
-        if (pos) syncPosition(pos as any);
+        if (pos) deletePosition(pos.id);
       }
     },
 

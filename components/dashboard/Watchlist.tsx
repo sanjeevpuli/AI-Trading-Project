@@ -1,7 +1,7 @@
 "use client";
 
 import { useTradingStore } from "@/lib/store/tradingStore";
-import { formatPrice, formatPercentage } from "@/lib/binance";
+import { formatPrice } from "@/lib/binance";
 import { useRouter } from "next/navigation";
 
 const WATCHLIST_SYMBOLS = [

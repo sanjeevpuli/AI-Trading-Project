@@ -1,4 +1,4 @@
-import { AgentSignal, AgentDiagnostic } from "../types/trading";
+import { AgentSignal } from "../types/trading";
 import { calculateEMA, calculateRSI, calculateMACD } from "../indicators";
 
 /**

@@ -12,6 +12,8 @@ export function useMarketData(symbols: string[], refreshIntervalMs: number = 500
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  const symbolsKey = symbols.join(",");
+
   useEffect(() => {
     let isMounted = true;
     let timeoutId: NodeJS.Timeout;
@@ -46,7 +48,8 @@ export function useMarketData(symbols: string[], refreshIntervalMs: number = 500
       isMounted = false;
       clearTimeout(timeoutId);
     };
-  }, [symbols.join(","), refreshIntervalMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolsKey, refreshIntervalMs]);
 
   return { data, isLoading, error };
 }
