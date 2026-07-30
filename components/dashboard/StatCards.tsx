@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 export default function StatCards() {
   const balance = useTradingStore((s) => s.balance);
   const positions = useTradingStore((s) => s.positions);
+  const history = useTradingStore((s) => s.history);
   const agentDiagnostics = useTradingStore((s) => s.agentDiagnostics);
   const socketStatus = useTradingStore((s) => s.socketStatus);
 
@@ -19,8 +20,8 @@ export default function StatCards() {
 
   if (!mounted) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 animate-pulse h-[102px]">
             <div className="h-4 w-24 bg-zinc-800 rounded mb-2" />
             <div className="h-6 w-32 bg-zinc-800 rounded" />
@@ -30,17 +31,31 @@ export default function StatCards() {
     );
   }
 
-  // Compute live unrealized PnL across all open positions
+  // Compute metrics
   const unrealizedPnL = positions.reduce((sum, p) => sum + p.pnl, 0);
-  const isPositive = unrealizedPnL >= 0;
-  // Total Value = Cash + (Cost Basis of Positions + Unrealized PnL)
-  const totalValue = balance + positions.reduce((s, p) => s + (p.entryPrice * p.amount) + p.pnl, 0);
+
+  // Today's P&L (Today's closed trades PnL + current open unrealized PnL)
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const closedTodayPnL = history
+    .filter((t) => new Date(t.exitTime) >= todayStart)
+    .reduce((sum, t) => sum + t.pnl, 0);
+  const todaysPnL = closedTodayPnL + unrealizedPnL;
+  const isTodayPositive = todaysPnL >= 0;
+
+  // Total Account Balance = Cash (Balance) + Margin allocated to open positions + Unrealized P&L
+  const marginInUse = positions.reduce((sum, p) => sum + (p.entryPrice * p.amount), 0);
+  const accountBalance = balance + marginInUse + unrealizedPnL;
+
+  // Win Rate calculation based on trade history
+  const winningTrades = history.filter((t) => t.pnl > 0).length;
+  const winRate = history.length > 0 ? ((winningTrades / history.length) * 100).toFixed(1) : "—";
 
   const activeAgents = agentDiagnostics.filter((a) => a.status !== "IDLE").length;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      {/* Total Portfolio Value */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      {/* 1. Account Balance */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4 relative overflow-hidden">
         {socketStatus === "CONNECTING" && (
           <div className="absolute top-4 right-4 h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
@@ -48,47 +63,54 @@ export default function StatCards() {
         {socketStatus === "CONNECTED" && (
           <div className="absolute top-4 right-4 h-2 w-2 rounded-full bg-emerald-500" />
         )}
-        <h3 className="text-zinc-400 text-sm font-medium mb-1">Total Portfolio Value</h3>
-        <div className="text-2xl font-bold text-zinc-100">{formatPrice(totalValue)}</div>
-        <div
-          className={`text-sm mt-1 flex items-center gap-1 ${
-            isPositive ? "text-emerald-500" : "text-rose-500"
-          }`}
-        >
-          <span>{isPositive ? "↑" : "↓"}</span>
-          {isPositive ? "+" : ""}
-          {formatPrice(Math.abs(unrealizedPnL))} open P&L
-        </div>
-      </div>
-
-      {/* Active Agents */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <h3 className="text-zinc-400 text-sm font-medium mb-1">Active Agents</h3>
-        <div className="text-2xl font-bold text-zinc-100">{activeAgents}</div>
+        <h3 className="text-zinc-400 text-sm font-medium mb-1">Account Balance</h3>
+        <div className="text-2xl font-bold text-zinc-100">{formatPrice(accountBalance)}</div>
         <div className="text-sm mt-1 text-zinc-500">
-          {activeAgents}/{agentDiagnostics.length} currently executing
+          Equity value
         </div>
       </div>
 
-      {/* Open Positions */}
+      {/* 2. Today's P&L */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <h3 className="text-zinc-400 text-sm font-medium mb-1">Today's P&L</h3>
+        <div className={`text-2xl font-bold ${isTodayPositive ? "text-emerald-500" : "text-rose-500"}`}>
+          {isTodayPositive ? "+" : ""}{formatPrice(todaysPnL)}
+        </div>
+        <div className="text-sm mt-1 text-zinc-500">
+          Incl. open P&L
+        </div>
+      </div>
+
+      {/* 3. Open Positions */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
         <h3 className="text-zinc-400 text-sm font-medium mb-1">Open Positions</h3>
         <div className="text-2xl font-bold text-zinc-100">{positions.length}</div>
         <div className="text-sm mt-1 text-zinc-500">
           {positions.length === 0
-            ? "No active contracts"
+            ? "No active positions"
             : `Across ${new Set(positions.map((p) => p.symbol)).size} market${
                 new Set(positions.map((p) => p.symbol)).size !== 1 ? "s" : ""
               }`}
         </div>
       </div>
 
-      {/* Buying Power (Cash) */}
+      {/* 4. Win Rate */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
-        <h3 className="text-zinc-400 text-sm font-medium mb-1">Buying Power</h3>
+        <h3 className="text-zinc-400 text-sm font-medium mb-1">Win Rate</h3>
+        <div className="text-2xl font-bold text-zinc-100">
+          {winRate !== "—" ? `${winRate}%` : "—"}
+        </div>
+        <div className="text-sm mt-1 text-zinc-500">
+          {history.length > 0 ? `${winningTrades}/${history.length} trades won` : "No closed trades"}
+        </div>
+      </div>
+
+      {/* 5. Available Margin (Buying Power) */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+        <h3 className="text-zinc-400 text-sm font-medium mb-1">Available Margin</h3>
         <div className="text-2xl font-bold text-zinc-100">{formatPrice(balance)}</div>
         <div className="text-sm mt-1 text-zinc-500">
-          {((balance / (totalValue || 1)) * 100).toFixed(1)}% cash buffer available
+          {((balance / (accountBalance || 1)) * 100).toFixed(1)}% cash available
         </div>
       </div>
     </div>

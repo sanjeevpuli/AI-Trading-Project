@@ -4,6 +4,8 @@ import Sidebar from "@/components/layout/Sidebar";
 import Navbar from "@/components/layout/Navbar";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
 
 const mobileNavItems = [
   { name: "Dashboard", path: "/dashboard", icon: "📊" },
@@ -16,12 +18,30 @@ const mobileNavItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, loading } = useAuth();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [user, loading, router]);
+
+  if (loading || !user) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-zinc-950 text-zinc-400">
+        <div className="flex items-center gap-3">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+          <span className="text-sm font-medium">Verifying authentication…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans flex-col">
@@ -41,16 +61,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {mobileNavItems.map((item) => {
             const isActive = pathname === item.path;
             return (
-              <button
+              <Link
                 key={item.name}
-                onClick={() => router.push(item.path)}
-                className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-center transition-colors cursor-pointer ${
+                href={item.path}
+                className={`flex flex-col items-center justify-center flex-1 h-full gap-0.5 text-center transition-colors ${
                   isActive ? "text-blue-500 font-bold" : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
                 <span className="text-xl">{item.icon}</span>
                 <span className="text-[10px] tracking-tight">{item.name}</span>
-              </button>
+              </Link>
             );
           })}
         </nav>

@@ -2,7 +2,8 @@
 
 import { useTradingStore } from "@/lib/store/tradingStore";
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 
 const navSections = [
@@ -56,7 +57,6 @@ export default function Sidebar() {
   const { logout } = useAuth();
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -82,10 +82,10 @@ export default function Sidebar() {
                 const isActive = pathname === item.path;
 
                 return (
-                  <button
+                  <Link
                     key={item.name}
-                    onClick={() => router.push(item.path)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer text-left ${
+                    href={item.path}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all text-left ${
                       mounted && isActive
                         ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
                         : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 border border-transparent"
@@ -98,7 +98,7 @@ export default function Sidebar() {
                         {positions.length}
                       </span>
                     )}
-                  </button>
+                  </Link>
                 );
               })}
             </nav>
