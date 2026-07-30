@@ -9,6 +9,7 @@ from api.v1.portfolio import router as portfolio_router
 from api.v1.trades import router as trades_router
 from api.v1.agents import router as agents_router
 from api.v1.workflow import router as workflow_router
+from api.v1.indicators import router as indicators_router
 
 # Database initialization
 from database.database import engine
@@ -46,3 +47,5 @@ app.include_router(portfolio_router, prefix="/api/v1")
 app.include_router(trades_router, prefix="/api/v1")
 app.include_router(agents_router, prefix="/api/v1")
 app.include_router(workflow_router, prefix="/api/v1")
+app.include_router(indicators_router, prefix="/api/v1")
+
