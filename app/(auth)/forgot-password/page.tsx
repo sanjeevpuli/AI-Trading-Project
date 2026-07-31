@@ -6,11 +6,32 @@ import Link from "next/link";
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real system this would call an API; for now we show a success state
-    setSubmitted(true);
+    setError("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      if (res.ok) {
+        setSubmitted(true);
+      } else {
+        const data = await res.json();
+        setError(data.error ?? "Something went wrong. Please try again.");
+      }
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -37,8 +58,19 @@ export default function ForgotPasswordPage() {
               <div className="text-4xl">📧</div>
               <h2 className="text-lg font-semibold text-zinc-100">Check your inbox</h2>
               <p className="text-zinc-400 text-sm">
-                If an account exists for <span className="text-zinc-200 font-medium">{email}</span>,
-                you will receive a password reset link shortly.
+                If an account exists for{" "}
+                <span className="text-zinc-200 font-medium">{email}</span>, you
+                will receive a password reset link shortly.
+              </p>
+              <p className="text-zinc-500 text-xs">
+                Didn&apos;t receive it? Check your spam folder or{" "}
+                <button
+                  onClick={() => { setSubmitted(false); setError(""); }}
+                  className="text-blue-400 hover:text-blue-300 transition underline"
+                >
+                  try again
+                </button>
+                .
               </p>
               <Link
                 href="/login"
@@ -49,6 +81,12 @@ export default function ForgotPasswordPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+              {error && (
+                <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-red-400 text-sm text-center">
+                  {error}
+                </div>
+              )}
+
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="forgot-email" className="text-sm font-medium text-zinc-300">
                   Email address
@@ -57,17 +95,27 @@ export default function ForgotPasswordPage() {
                   id="forgot-email"
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   className="rounded-lg bg-zinc-800 border border-zinc-700 px-4 py-2.5 text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-zinc-500 transition"
                 />
               </div>
+
               <button
                 type="submit"
-                className="rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-3 font-semibold text-white transition-colors"
+                disabled={loading}
+                className="rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed px-4 py-3 font-semibold text-white transition-colors flex items-center justify-center gap-2"
               >
-                Send Reset Link
+                {loading ? (
+                  <>
+                    <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  "Send Reset Link"
+                )}
               </button>
             </form>
           )}

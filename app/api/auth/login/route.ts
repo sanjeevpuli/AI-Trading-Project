@@ -21,17 +21,20 @@ export async function POST(request: NextRequest) {
   // Sign JWT
   const token = signToken({ id: user.id, email: user.email });
 
-  // Set HttpOnly cookie
-  const response = NextResponse.json({ message: 'Logged in' });
-  response.cookies.set({
-    name: 'auth_token',
-    value: token,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 7, // 1 week
-  });
+  const response = NextResponse.json({ message: 'Logged in', user: { id: user.id, email: user.email } });
+  const isProd = process.env.NODE_ENV === "production";
+  const cookieOptions = [
+    `auth_token=${token}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${60 * 60 * 24 * 7}`,
+    isProd ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+
+  response.headers.append("Set-Cookie", cookieOptions);
 
   return response;
 }

@@ -63,14 +63,19 @@ export async function POST(req: NextRequest) {
       user: { id: user.id, email: user.email },
     });
 
-    // Set token as an HttpOnly, secure, sameSite cookie
-    response.cookies.set("auth_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: "/",
-    });
+    const isProd = process.env.NODE_ENV === "production";
+    const cookieOptions = [
+      `auth_token=${token}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+      `Max-Age=${60 * 60 * 24 * 7}`,
+      isProd ? "Secure" : "",
+    ]
+      .filter(Boolean)
+      .join("; ");
+
+    response.headers.append("Set-Cookie", cookieOptions);
 
     return response;
   } catch (error: unknown) {

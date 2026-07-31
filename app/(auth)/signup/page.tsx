@@ -3,9 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 export default function SignupPage() {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -34,8 +36,8 @@ export default function SignupPage() {
       });
 
       if (res.ok) {
+        await refresh();
         router.push("/dashboard");
-        router.refresh();
       } else {
         const data = await res.json();
         setError(data.error || "Signup failed. Please try again.");

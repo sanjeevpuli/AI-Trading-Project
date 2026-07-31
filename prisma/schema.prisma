@@ -1,30 +1,32 @@
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
 generator client {
   provider = "prisma-client-js"
 }
 
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
 model User {
-  id               String             @id @default(uuid())
-  email            String             @unique
-  password         String
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  portfolios       Portfolio[]
-  trades           Trade[]
-  positions        Position[]
-  watchlist        Watchlist?
-  metricsHistory   PortfolioMetrics[]
-  executionLogs    ExecutionLog[]
+  id             String             @id @default(uuid())
+  email          String             @unique
+  password       String
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  executionLogs  ExecutionLog[]
+  portfolios     Portfolio?
+  metricsHistory PortfolioMetrics[]
+  positions           Position[]
+  trades              Trade[]
+  watchlist           Watchlist?
+  passwordResetTokens PasswordResetToken[]
 }
 
 model Portfolio {
   id            String   @id @default(uuid())
   userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   totalValue    Float    @default(100000.0)
   cash          Float    @default(100000.0)
   unrealizedPnL Float    @default(0.0)
@@ -36,17 +38,17 @@ model Portfolio {
   exposure      Float    @default(0.0)
   netBeta       Float    @default(0.0)
   valueAtRisk   Float    @default(0.0)
-  equityCurve   Json     @default("[]") // [{ time: string, value: number }]
+  equityCurve   Json     @default("[]")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Trade {
   id            String   @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol        String
-  type          String   // "LONG" | "SHORT"
+  type          String
   entryPrice    Float
   exitPrice     Float
   amount        Float
@@ -54,18 +56,18 @@ model Trade {
   pnlPercentage Float
   entryTime     DateTime
   exitTime      DateTime
-  exitReason    String   // "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT"
+  exitReason    String
   fee           Float    @default(0.0)
   slippage      Float    @default(0.0)
   createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Position {
   id            String   @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbol        String
-  type          String   // "LONG" | "SHORT"
+  type          String
   entryPrice    Float
   currentPrice  Float
   amount        Float
@@ -74,13 +76,14 @@ model Position {
   timestamp     DateTime @default(now())
   pnl           Float    @default(0.0)
   pnlPercentage Float    @default(0.0)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AgentSignal {
   id         String   @id @default(uuid())
   symbol     String
   agentId    String
-  type       String   // "BUY" | "SELL" | "HOLD"
+  type       String
   confidence Float
   reason     String
   riskScore  Float
@@ -90,30 +93,41 @@ model AgentSignal {
 model PortfolioMetrics {
   id            String   @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   timestamp     DateTime @default(now())
   totalValue    Float
   cash          Float
   realizedPnL   Float
   unrealizedPnL Float
   drawDown      Float
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Watchlist {
   id        String   @id @default(uuid())
   userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   symbols   String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model ExecutionLog {
   id        String   @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  level     String   // "INFO" | "WARNING" | "ERROR"
+  level     String
   message   String
   details   String?
   timestamp DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

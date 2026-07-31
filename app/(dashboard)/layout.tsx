@@ -3,7 +3,7 @@
 import Sidebar from "@/components/layout/Sidebar";
 import Navbar from "@/components/layout/Navbar";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 
@@ -18,16 +18,29 @@ const mobileNavItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, refresh } = useAuth();
   const [mounted, setMounted] = useState(false);
+  const hasRefreshed = useRef(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
+  // On mount: if AuthContext still has stale pre-login state (user=null),
+  // re-verify once. This handles router.push() after login without refresh().
   useEffect(() => {
-    if (!loading && !user) {
+    if (!hasRefreshed.current) {
+      hasRefreshed.current = true;
+      if (!user) {
+        refresh();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Redirect only after loading is fully settled and user is confirmed absent
+  useEffect(() => {
+    if (!loading && !user && hasRefreshed.current) {
       router.replace("/login");
     }
   }, [user, loading, router]);
