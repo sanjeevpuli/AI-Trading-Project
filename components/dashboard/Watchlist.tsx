@@ -5,13 +5,14 @@ import { formatPrice } from "@/lib/binance";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const WATCHLIST_SYMBOLS = [
-  { symbol: "BTCUSDT", icon: "₿", color: "text-amber-500" },
-  { symbol: "ETHUSDT", icon: "Ξ", color: "text-indigo-400" },
-  { symbol: "SOLUSDT", icon: "◎", color: "text-purple-400" },
-];
+const DEFAULT_ICONS: Record<string, { icon: string; color: string }> = {
+  BTCUSDT: { icon: "₿", color: "text-amber-500" },
+  ETHUSDT: { icon: "Ξ", color: "text-indigo-400" },
+  SOLUSDT: { icon: "◎", color: "text-purple-400" },
+};
 
 export default function Watchlist() {
+  const watchlistSymbols = useTradingStore((s) => s.watchlistSymbols);
   const prices = useTradingStore((s) => s.prices);
   const priceChanges = useTradingStore((s) => s.priceChanges);
   const socketStatus = useTradingStore((s) => s.socketStatus);
@@ -61,7 +62,9 @@ export default function Watchlist() {
           </div>
         ) : (
           <ul className="divide-y divide-zinc-800/50">
-            {WATCHLIST_SYMBOLS.map(({ symbol, icon, color }) => {
+            {watchlistSymbols.map((symbol) => {
+              const iconObj = DEFAULT_ICONS[symbol] || { icon: "📈", color: "text-blue-400" };
+              const { icon, color } = iconObj;
               const price = prices[symbol] ?? 0;
               const change = priceChanges[symbol] ?? 0;
               const isPositive = change >= 0;

@@ -504,7 +504,7 @@ describe("Suite 12: API Endpoints", function () {
   });
   it("TC-282 POST /api/auth/login valid → 200", async () => {
     await nav(d, "/login");
-    const r = await d.executeScript("return (async()=>{const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email:'${VALID_EMAIL}',password:'${VALID_PASSWORD}'})});return res.status;})()".replace("${VALID_EMAIL}", VALID_EMAIL).replace("${VALID_PASSWORD}", VALID_PASSWORD));
+    const r = await d.executeScript("return (async()=>{const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({email:VALID_EMAIL,password:VALID_PASSWORD})});return res.status;})()");
     assert.ok(r === 200 || r === 201 || true);
   });
   it("TC-283 POST /api/auth/login bad → 401", async () => {

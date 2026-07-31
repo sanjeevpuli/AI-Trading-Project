@@ -47,6 +47,7 @@ function initWidget(interval: string, symbol: string) {
 
 export default function ChartSection() {
   const selectedAsset = useTradingStore((s) => s.selectedAsset);
+  const portfolioMetrics = useTradingStore((s) => s.portfolioMetrics);
   const [activeInterval, setActiveInterval] = useState("60");
   // Track whether the <script> tag is already in the DOM
   const scriptRef = useRef<HTMLScriptElement | null>(null);
@@ -95,6 +96,13 @@ export default function ChartSection() {
             <span className="text-zinc-100 font-semibold text-sm">{selectedAsset}</span>
             <span className="ml-2 text-zinc-500 text-xs">{selectedAsset.replace("USDT", "")} / Tether · Binance</span>
           </div>
+          {portfolioMetrics && portfolioMetrics.length > 0 && (
+            <div className="ml-4 px-2 py-0.5 bg-zinc-800 rounded border border-zinc-700">
+               <span className="text-xs text-zinc-400" title="Historical Portfolio Metrics chart rendering requires custom TradingView Datafeed. Falling back to asset view.">
+                 Portfolio Value: <span className="text-zinc-200">${portfolioMetrics[portfolioMetrics.length - 1].totalValue.toFixed(2)}</span>
+               </span>
+            </div>
+          )}
         </div>
 
         {/* Timeframe switcher */}

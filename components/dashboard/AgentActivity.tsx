@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 
 export default function AgentActivity() {
   const diagnostics = useTradingStore((s) => s.agentDiagnostics);
+  const isDashboardLoading = useTradingStore((s) => s.isDashboardLoading);
+  const dashboardError = useTradingStore((s) => s.dashboardError);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -28,7 +30,11 @@ export default function AgentActivity() {
         </span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {!mounted ? (
+        {dashboardError ? (
+           <div className="flex flex-col items-center justify-center py-6 text-center">
+             <p className="text-xs text-rose-400 mb-2">Failed to sync agent activity</p>
+           </div>
+        ) : !mounted || isDashboardLoading ? (
           Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-12 bg-zinc-800/40 rounded animate-pulse w-full" />
           ))

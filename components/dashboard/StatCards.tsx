@@ -10,6 +10,7 @@ export default function StatCards() {
   const history = useTradingStore((s) => s.history);
   const agentDiagnostics = useTradingStore((s) => s.agentDiagnostics);
   const socketStatus = useTradingStore((s) => s.socketStatus);
+  const isDashboardLoading = useTradingStore((s) => s.isDashboardLoading);
 
   const [mounted, setMounted] = useState(false);
 
@@ -18,7 +19,7 @@ export default function StatCards() {
     setMounted(true);
   }, []);
 
-  if (!mounted) {
+  if (!mounted || isDashboardLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         {Array.from({ length: 5 }).map((_, i) => (

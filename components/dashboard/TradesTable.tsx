@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 export default function TradesTable() {
   const history = useTradingStore((s) => s.history);
+  const isDashboardLoading = useTradingStore((s) => s.isDashboardLoading);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -24,7 +25,7 @@ export default function TradesTable() {
         )}
       </div>
 
-      {!mounted ? (
+      {!mounted || isDashboardLoading ? (
         <div className="p-4 space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-8 bg-zinc-800/40 rounded animate-pulse w-full" />

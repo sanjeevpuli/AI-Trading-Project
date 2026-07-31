@@ -28,7 +28,13 @@ interface TradingStore {
   latestConsensusReasoning: string;
   latestConsensusConfidence: number;
 
+  watchlistSymbols: string[];
+  portfolioMetrics: { timestamp: string; totalValue: number; cash: number; realizedPnL: number; unrealizedPnL: number; drawDown: number }[];
+  isDashboardLoading: boolean;
+  dashboardError: string | null;
+
   // Actions
+  fetchDashboardData: () => Promise<void>;
   updatePrice: (symbol: string, price: number, changePercent: number) => void;
   updateKlineClose: (symbol: string, closePrice: number, historyPrices: number[]) => void;
   executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => { success: boolean; error?: string };
@@ -134,8 +140,8 @@ export const useTradingStore = create<TradingStore>((set, get) => {
 
   return {
     selectedAsset: "BTCUSDT",
-    prices: { BTCUSDT: 68210.0, ETHUSDT: 3850.5, SOLUSDT: 164.2 },
-    priceChanges: { BTCUSDT: 0.8, ETHUSDT: 1.5, SOLUSDT: -1.2 },
+    prices: { BTCUSDT: 68210.0, ETHUSDT: 3850.5, SOLUSDT: 164.2 }, // Mocked fallbacks for UI
+    priceChanges: { BTCUSDT: 0.8, ETHUSDT: 1.5, SOLUSDT: -1.2 }, // Mocked fallbacks for UI
     socketStatus: "DISCONNECTED",
     balance: initialBalance,
     positions: initialPositions,
@@ -144,6 +150,66 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     agentSignals: {},
     latestConsensusReasoning: "Awaiting candle closing indicators to form weighted consensus trade actions.",
     latestConsensusConfidence: 50,
+    watchlistSymbols: [],
+    portfolioMetrics: [],
+    isDashboardLoading: true,
+    dashboardError: null,
+
+    fetchDashboardData: async () => {
+      set({ isDashboardLoading: true, dashboardError: null });
+      try {
+        const [dashRes, sigRes, agentsRes] = await Promise.all([
+          fetch("/api/dashboard"),
+          fetch("/api/signals"),
+          fetch("/api/agents")
+        ]);
+
+        if (!dashRes.ok) throw new Error("Failed to load dashboard data");
+        
+        const dashData = await dashRes.json();
+        const sigData = await sigRes.json();
+        const agentsData = await agentsRes.json();
+
+        // Check if there is portfolio data, otherwise fallback to local initial state
+        const nextBalance = dashData.portfolio?.balance ?? initialBalance;
+        const nextPositions = dashData.activePositions ?? initialPositions;
+        const nextHistory = dashData.executionHistory ?? initialHistory;
+        
+        // Agent diagnostics merging: merge the static UI setup with real logs from DB
+        const mergedDiagnostics = initialDiagnostics.map(diag => {
+          const dbAgent = agentsData.agents?.find((a: any) => a.id === diag.id);
+          return {
+            ...diag,
+            status: dbAgent?.status || diag.status,
+            health: dbAgent?.health || diag.health,
+            activity: dbAgent?.activity && dbAgent.activity.length > 0 ? dbAgent.activity : diag.activity,
+          };
+        });
+
+        // Parse signals 
+        // We expect /api/signals to return { signals: Record<string, AgentSignal>, consensus: { type, reasoning, confidence } }
+        const parsedSignals = sigData.signals || {};
+        const consensusStr = sigData.consensus?.reasoning || "Awaiting signal computations...";
+        const consensusConf = sigData.consensus?.confidence || 50;
+
+        set({
+          balance: nextBalance,
+          positions: nextPositions,
+          history: nextHistory,
+          watchlistSymbols: dashData.watchlist || [],
+          portfolioMetrics: dashData.metrics || [],
+          agentDiagnostics: mergedDiagnostics,
+          agentSignals: parsedSignals,
+          latestConsensusReasoning: consensusStr,
+          latestConsensusConfidence: consensusConf,
+          isDashboardLoading: false,
+        });
+
+      } catch (err) {
+        console.error("Dashboard fetch error:", err);
+        set({ isDashboardLoading: false, dashboardError: String(err) });
+      }
+    },
 
     // UI Tab & Asset actions
     setSelectedAsset: (symbol) => set({ selectedAsset: symbol }),

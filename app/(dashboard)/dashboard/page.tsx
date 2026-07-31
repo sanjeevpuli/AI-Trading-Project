@@ -21,11 +21,15 @@ export default function DashboardPage() {
   const socketStatus = useTradingStore((s) => s.socketStatus);
   const router = useRouter();
 
+  const fetchDashboardData = useTradingStore((s) => s.fetchDashboardData);
+  const isDashboardLoading = useTradingStore((s) => s.isDashboardLoading);
+
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
-  }, []);
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   if (!mounted) {
     return (
