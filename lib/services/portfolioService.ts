@@ -1,4 +1,4 @@
-import { Trade, Position, PortfolioStats } from "../types/trading";
+import { Trade, Position, PortfolioStats, PortfolioMetrics } from "../types/trading";
 
 /**
  * Calculates win rate percentage.
@@ -10,78 +10,13 @@ export function calculateWinRate(history: Trade[]): number {
 }
 
 /**
- * Seed historical closed trades conforming to strict Trade interface.
- */
-export const SEED_CLOSED_TRADES: Trade[] = [
-  {
-    id: "TRD-MOCK-1",
-    symbol: "BTCUSDT",
-    type: "LONG",
-    entryPrice: 67120.5,
-    exitPrice: 68420.0,
-    amount: 0.5,
-    pnl: 649.75,
-    pnlPercentage: 1.93,
-    entryTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    exitTime: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
-    exitReason: "TAKE_PROFIT",
-    fee: 13.42,
-    slippage: 6.71,
-  },
-  {
-    id: "TRD-MOCK-2",
-    symbol: "ETHUSDT",
-    type: "SHORT",
-    entryPrice: 3895.2,
-    exitPrice: 3820.4,
-    amount: 2.0,
-    pnl: 149.6,
-    pnlPercentage: 1.92,
-    entryTime: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-    exitTime: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
-    exitReason: "MANUAL",
-    fee: 3.12,
-    slippage: 1.56,
-  },
-  {
-    id: "TRD-MOCK-3",
-    symbol: "SOLUSDT",
-    type: "LONG",
-    entryPrice: 165.4,
-    exitPrice: 161.2,
-    amount: 15.0,
-    pnl: -63.0,
-    pnlPercentage: -2.54,
-    entryTime: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    exitTime: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    exitReason: "STOP_LOSS",
-    fee: 0.99,
-    slippage: 0.5,
-  },
-  {
-    id: "TRD-MOCK-4",
-    symbol: "BNBUSDT",
-    type: "LONG",
-    entryPrice: 590.25,
-    exitPrice: 605.5,
-    amount: 4.0,
-    pnl: 61.0,
-    pnlPercentage: 2.58,
-    entryTime: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    exitTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    exitReason: "MANUAL",
-    fee: 0.96,
-    slippage: 0.48,
-  },
-];
-
-/**
  * Calculates complete portfolio metrics and returns PortfolioStats conforming to strict interface.
  */
 export function calculatePortfolioStats(
   cash: number,
   positions: Position[],
-  history: Trade[]
+  history: Trade[],
+  metricsHistory: PortfolioMetrics[] = []
 ): PortfolioStats {
   let unrealizedPnL = 0;
   let totalPositionValue = 0;
@@ -102,7 +37,7 @@ export function calculatePortfolioStats(
   const winRate = calculateWinRate(history);
 
   // Sharpe Ratio calculations
-  let sharpeRatio = 1.95;
+  let sharpeRatio = 0.0;
   if (history.length >= 3) {
     const pnls = history.map((t) => t.pnlPercentage);
     const avg = pnls.reduce((s, p) => s + p, 0) / pnls.length;
@@ -114,12 +49,40 @@ export function calculatePortfolioStats(
       sharpeRatio = Number(((avg - 0.01) / stdDev).toFixed(2));
       sharpeRatio = Math.max(-2.0, Math.min(3.5, sharpeRatio));
     }
+  } else if (metricsHistory.length >= 2) {
+      // Calculate sharpe from metrics
+      const dailyReturns = [];
+      for (let i = 1; i < metricsHistory.length; i++) {
+        const prev = metricsHistory[i - 1].totalValue;
+        const curr = metricsHistory[i].totalValue;
+        if (prev > 0) dailyReturns.push((curr - prev) / prev);
+      }
+      if (dailyReturns.length >= 2) {
+        const avg = dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length;
+        const variance = dailyReturns.reduce((s, r) => s + Math.pow(r - avg, 2), 0) / dailyReturns.length;
+        const stdDev = Math.sqrt(variance);
+        if (stdDev > 0) sharpeRatio = Number(((avg - 0.0001) / stdDev).toFixed(2));
+      }
   }
 
   // Drawdown
-  let maxDrawdown = 3.85;
-  if (history.length > 0) {
-    let currentEquity = 100000;
+  let maxDrawdown = 0.0;
+  if (metricsHistory.length > 0) {
+      let peak = metricsHistory[0].totalValue;
+      let worstDrawdown = 0;
+      metricsHistory.forEach((m) => {
+          if (m.totalValue > peak) peak = m.totalValue;
+          const dd = peak > 0 ? ((peak - m.totalValue) / peak) * 100 : 0;
+          if (dd > worstDrawdown) worstDrawdown = dd;
+      });
+      // Also check current against peak
+      if (totalValue > peak) peak = totalValue;
+      const currentDd = peak > 0 ? ((peak - totalValue) / peak) * 100 : 0;
+      if (currentDd > worstDrawdown) worstDrawdown = currentDd;
+      
+      maxDrawdown = Number(worstDrawdown.toFixed(2));
+  } else if (history.length > 0) {
+    let currentEquity = cash; // approximation
     let peak = currentEquity;
     let worstDrawdown = 0;
 
@@ -143,39 +106,27 @@ export function calculatePortfolioStats(
 
   // Compile Dynamic Equity Curve
   const equityCurve: { time: string; value: number }[] = [];
-  let equity = 100000;
-
-  // Add baseline starting point
-  equityCurve.push({
-    time: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-    }),
-    value: equity,
-  });
-
-  const sortedHistory = history
-    .slice()
-    .sort((a, b) => new Date(a.exitTime).getTime() - new Date(b.exitTime).getTime());
-
-  sortedHistory.forEach((trade) => {
-    equity += trade.pnl;
-    equityCurve.push({
-      time: new Date(trade.exitTime).toLocaleDateString([], {
-        month: "short",
-        day: "numeric",
-      }),
-      value: Math.round(equity),
-    });
-  });
-
-  // Ensure equity curve has at least 2 points for line rendering
-  if (equityCurve.length === 1) {
-    equityCurve.push({
-      time: new Date().toLocaleDateString([], { month: "short", day: "numeric" }),
-      value: Math.round(equity),
-    });
+  
+  if (metricsHistory.length > 0) {
+      metricsHistory.forEach(m => {
+          equityCurve.push({
+              time: new Date(m.timestamp).toLocaleDateString([], {
+                  month: "short",
+                  day: "numeric",
+              }),
+              value: Math.round(m.totalValue)
+          });
+      });
   }
+
+  // Add the current live portfolio value to the end of the curve
+  equityCurve.push({
+      time: new Date().toLocaleDateString([], {
+          month: "short",
+          day: "numeric",
+      }),
+      value: Math.round(totalValue)
+  });
 
   return {
     totalValue,
@@ -187,8 +138,8 @@ export function calculatePortfolioStats(
     maxDrawdown,
     leverage: Number(leverage.toFixed(2)),
     exposure: Number(exposure.toFixed(2)),
-    netBeta: 1.08,
-    valueAtRisk: 2.15,
+    netBeta: 1.0, // Should be calculated vs SPY eventually
+    valueAtRisk: maxDrawdown * 0.5, // Simple approximation
     equityCurve,
   };
 }

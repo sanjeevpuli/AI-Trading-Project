@@ -17,29 +17,13 @@ export default function PerformanceHistoryChart() {
 
   const stats = getStats();
 
-  // Use the real equity curve from portfolioService, or fallback to seed data
-  const data: DataPoint[] =
-    stats.equityCurve.length >= 2
-      ? stats.equityCurve.map((pt) => ({
-          date: new Date(pt.time).toLocaleDateString([], { month: "short", day: "numeric" }),
-          value: pt.value,
-        }))
-      : (() => {
-          // Seed 30-day fallback so chart always has content
-          const result: DataPoint[] = [];
-          const startVal = 92000;
-          const now = new Date();
-          for (let i = 29; i >= 0; i--) {
-            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-            const drift = (29 - i) * 600;
-            const noise = Math.sin((29 - i) * 0.7) * 1800 + Math.cos((29 - i) * 1.5) * 800;
-            result.push({
-              date: date.toLocaleDateString([], { month: "short", day: "numeric" }),
-              value: Math.round(startVal + drift + noise),
-            });
-          }
-          return result;
-        })();
+  // Use the real equity curve from portfolioService
+  const data: DataPoint[] = stats.equityCurve.map((pt) => ({
+    date: pt.time,
+    value: pt.value,
+  }));
+
+  const hasEnoughData = data.length >= 2;
 
   // Responsive width tracking
   useEffect(() => {
@@ -127,14 +111,21 @@ export default function PerformanceHistoryChart() {
       </div>
 
       <div className="relative flex-1 mt-4">
-        <svg
-          width={dims.width}
-          height={dims.height}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setHoveredIdx(null)}
-          className="overflow-visible select-none cursor-crosshair"
-        >
-          <defs>
+        {!hasEnoughData ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-500">
+            <span className="text-2xl mb-2">📈</span>
+            <p className="text-sm">Not enough data to display chart.</p>
+            <p className="text-xs">Check back tomorrow for history.</p>
+          </div>
+        ) : (
+          <svg
+            width={dims.width}
+            height={dims.height}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={() => setHoveredIdx(null)}
+            className="overflow-visible select-none cursor-crosshair"
+          >
+            <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
               <stop offset="100%" stopColor={lineColor} stopOpacity="0.00" />
@@ -186,35 +177,35 @@ export default function PerformanceHistoryChart() {
             </>
           )}
 
-          {/* Hover crosshair + tooltip */}
-          {hoveredIdx !== null && points[hoveredIdx] && (
-            <g>
-              <line
-                x1={points[hoveredIdx].x} y1={paddingTop}
-                x2={points[hoveredIdx].x} y2={dims.height - paddingBottom}
-                stroke="#3f3f46" strokeWidth="1"
-              />
-              <circle
-                cx={points[hoveredIdx].x} cy={points[hoveredIdx].y}
-                r="6" fill={lineColor} stroke="#18181b" strokeWidth="2"
-                style={{ filter: `drop-shadow(0 0 4px ${lineColor})` }}
-              />
-              <foreignObject
-                x={points[hoveredIdx].x > dims.width / 2 ? points[hoveredIdx].x - 148 : points[hoveredIdx].x + 15}
-                y={points[hoveredIdx].y - 32}
-                width="132" height="64"
-                className="pointer-events-none"
-              >
-                <div className="bg-zinc-950 border border-zinc-800 rounded p-2 shadow-xl text-left">
-                  <span className="text-[9px] text-zinc-500 font-bold block">{points[hoveredIdx].date}</span>
-                  <span className="text-xs font-bold text-zinc-100 mt-0.5 block">
-                    {formatPrice(points[hoveredIdx].value)}
-                  </span>
-                </div>
-              </foreignObject>
-            </g>
-          )}
-        </svg>
+            {hoveredIdx !== null && points[hoveredIdx] && (
+              <g>
+                <line
+                  x1={points[hoveredIdx].x} y1={paddingTop}
+                  x2={points[hoveredIdx].x} y2={dims.height - paddingBottom}
+                  stroke="#3f3f46" strokeWidth="1"
+                />
+                <circle
+                  cx={points[hoveredIdx].x} cy={points[hoveredIdx].y}
+                  r="6" fill={lineColor} stroke="#18181b" strokeWidth="2"
+                  style={{ filter: `drop-shadow(0 0 4px ${lineColor})` }}
+                />
+                <foreignObject
+                  x={points[hoveredIdx].x > dims.width / 2 ? points[hoveredIdx].x - 148 : points[hoveredIdx].x + 15}
+                  y={points[hoveredIdx].y - 32}
+                  width="132" height="64"
+                  className="pointer-events-none"
+                >
+                  <div className="bg-zinc-950 border border-zinc-800 rounded p-2 shadow-xl text-left">
+                    <span className="text-[9px] text-zinc-500 font-bold block">{points[hoveredIdx].date}</span>
+                    <span className="text-xs font-bold text-zinc-100 mt-0.5 block">
+                      {formatPrice(points[hoveredIdx].value)}
+                    </span>
+                  </div>
+                </foreignObject>
+              </g>
+            )}
+          </svg>
+        )}
       </div>
     </div>
   );

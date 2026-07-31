@@ -1,168 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-
-interface Agent {
-  id: string;
-  name: string;
-  role: string;
-  icon: string;
-  status: "ACTIVE" | "IDLE" | "ANALYZING" | "EXECUTING";
-  confidence: number;
-  health: "HEALTHY" | "DEGRADED" | "OFFLINE";
-  latency: string;
-  uptime: string;
-  color: string;
-  activity: string[];
-}
-
-const INITIAL_AGENTS: Agent[] = [
-  {
-    id: "market-analysis",
-    name: "Market Analysis Agent",
-    role: "Fundamental & Macro scanning",
-    icon: "📊",
-    status: "ANALYZING",
-    confidence: 84,
-    health: "HEALTHY",
-    latency: "18ms",
-    uptime: "99.98%",
-    color: "text-blue-400 border-blue-500/20",
-    activity: [
-      "Parsed FED meeting transcripts: moderately hawkish stance detected.",
-      "Evaluating correlation matrix between BTC and Nasdaq index.",
-      "Scanning volume profile value areas (VAH/VAL) for liquidity zones.",
-    ],
-  },
-  {
-    id: "technical-analysis",
-    name: "Technical Analysis Agent",
-    role: "Indicator & Candlestick analytics",
-    icon: "📈",
-    status: "EXECUTING",
-    confidence: 91,
-    health: "HEALTHY",
-    latency: "8ms",
-    uptime: "100.0%",
-    color: "text-amber-500 border-amber-500/20",
-    activity: [
-      "Detected Bullish Golden Cross (EMA20 > EMA50) on 4H BTCUSDT chart.",
-      "Computed current RSI: 58.42 (momentum is neutral-bullish).",
-      "Identified double-bottom support pattern with high-volume confirmation.",
-    ],
-  },
-  {
-    id: "sentiment-analysis",
-    name: "Sentiment Analysis Agent",
-    role: "News feeds & Social media parsing",
-    icon: "💬",
-    status: "ACTIVE",
-    confidence: 76,
-    health: "HEALTHY",
-    latency: "35ms",
-    uptime: "99.92%",
-    color: "text-pink-400 border-pink-500/20",
-    activity: [
-      "Aggregated 1,500 Twitter/X mentions; positive sentiment ratio is 68%.",
-      "Scanned Google News: Crypto regulatory news is leaning optimistic.",
-      "Fear & Greed Index parsed: 64 (Greed) - trending up.",
-    ],
-  },
-  {
-    id: "risk-management",
-    name: "Risk Management Agent",
-    role: "Stop loss & Capital allocation constraints",
-    icon: "🛡️",
-    status: "ACTIVE",
-    confidence: 98,
-    health: "HEALTHY",
-    latency: "5ms",
-    uptime: "100.0%",
-    color: "text-emerald-400 border-emerald-500/20",
-    activity: [
-      "Total portfolio net exposure is 42.50% - well within safety margins.",
-      "Simulated portfolio VaR (95% 1-day) computed: 2.45%.",
-      "Calculated maximum potential drawdown parameters for active positions.",
-    ],
-  },
-  {
-    id: "portfolio-allocation",
-    name: "Portfolio Allocation Agent",
-    role: "Weight distribution optimizer",
-    icon: "💼",
-    status: "ACTIVE",
-    confidence: 88,
-    health: "HEALTHY",
-    latency: "22ms",
-    uptime: "99.95%",
-    color: "text-purple-400 border-purple-500/20",
-    activity: [
-      "Re-estimating mean-variance frontier based on 14-day return metrics.",
-      "Optimized Sharpe Ratio weights: suggest increasing ETH holding slightly.",
-      "Calculated covariance matrices for active Perp contracts.",
-    ],
-  },
-  {
-    id: "trade-execution",
-    name: "Trade Execution Agent",
-    role: "Smart order routing & VWAP execution",
-    icon: "⚡",
-    status: "IDLE",
-    confidence: 95,
-    health: "HEALTHY",
-    latency: "12ms",
-    uptime: "100.0%",
-    color: "text-cyan-400 border-cyan-500/20",
-    activity: [
-      "VWAP execution engine pre-loaded. Bid-ask spread: 0.01%.",
-      "Last order routed: BUY 0.5 BTC completed in 140ms.",
-      "Monitoring exchange order book liquidity profiles.",
-    ],
-  },
-];
-
-// Seed pools of realistic thoughts to draw from on live timer
-const MOCK_THOUGHT_POOLS: Record<string, string[]> = {
-  "market-analysis": [
-    "Scanned macroeconomic indicators: DXY weakness supporting crypto bid.",
-    "Analyzing order flow imbalances on Binance Futures order book.",
-    "Calculated 30-day volatility curve: compressing, breakout imminent.",
-    "Macro data updated: U.S. inflation data shows signs of cool down.",
-  ],
-  "technical-analysis": [
-    "EMA200 support tested successfully on 1H ETHUSDT chart.",
-    "Identified bearish divergence on hourly MACD histogram.",
-    "Calculated pivot points: next resistance level at $69,200.",
-    "RSI crossing above 60, signaling accelerating bullish momentum.",
-  ],
-  "sentiment-analysis": [
-    "Sentiment Spike: Positive Reddit volume increases by +24% for SOL.",
-    "Fear & Greed index ticked from 62 to 65 over last 24 hours.",
-    "News parser: Institutional inflows into Bitcoin spot ETFs accelerating.",
-    "Analyzed Discord dev chat logs: high developer activity on Solana.",
-  ],
-  "risk-management": [
-    "Evaluating Sharpe threshold bounds: adjusting active portfolio risk.",
-    "Checking trailing stop-loss configurations on open margin contracts.",
-    "Risk Check: Net exposure levels analyzed. Zero margin alarms.",
-    "Assessed historical correlation vectors between BTC and ETH holdings.",
-  ],
-  "portfolio-allocation": [
-    "Performing weekly Markowitz rebalancing routine. Allocations nominal.",
-    "Simulating asset weight adjustment scenarios under black-swan stress test.",
-    "Diversification index evaluated: Portfolio is optimally diversified.",
-    "Optimal cash buffer target calculated: 55.0% - target matching.",
-  ],
-  "trade-execution": [
-    "Inspecting bid/ask depth on global spot books: liquidity is stable.",
-    "Smart Router: Multi-hop routing pathways active for perp routing.",
-    "Monitoring execution slippage. Current average: 0.008%.",
-    "Heartbeat check: Binance websocket connection active, latency 11ms.",
-  ],
-};
+import React, { useState } from "react";
+import { useTradingStore } from "@/lib/store/tradingStore";
+import { AgentDiagnostic, AgentSignal } from "@/lib/types/trading";
 
 export default function AgentsDashboard() {
-  const [agents, setAgents] = useState<Agent[]>(INITIAL_AGENTS);
+  const agents = useTradingStore((s) => s.agentDiagnostics);
+  const agentSignals = useTradingStore((s) => s.agentSignals);
+  const latestConsensusReasoning = useTradingStore((s) => s.latestConsensusReasoning);
+  const latestConsensusConfidence = useTradingStore((s) => s.latestConsensusConfidence);
+  const socketStatus = useTradingStore((s) => s.socketStatus);
   const [activeToggles, setActiveToggles] = useState<Record<string, boolean>>({
     "market-analysis": true,
     "technical-analysis": true,
@@ -172,72 +19,11 @@ export default function AgentsDashboard() {
     "trade-execution": true,
   });
 
-  // Background activity simulating scrolling quantitative logs in real-time
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Pick a random active agent to update
-      const activeAgentIds = Object.keys(activeToggles).filter((id) => activeToggles[id]);
-      if (activeAgentIds.length === 0) return;
-
-      const randomId = activeAgentIds[Math.floor(Math.random() * activeAgentIds.length)];
-
-      setAgents((prevAgents) =>
-        prevAgents.map((agent) => {
-          if (agent.id === randomId) {
-            // Update confidence slightly and push a new thought
-            const confidenceChange = Math.floor(Math.random() * 5) - 2; // -2 to +2
-            const newConfidence = Math.max(50, Math.min(100, agent.confidence + confidenceChange));
-
-            const pool = MOCK_THOUGHT_POOLS[agent.id];
-            const randomThought = pool[Math.floor(Math.random() * pool.length)];
-
-            // Deduplicate thoughts in recent history
-            const filteredActivity = agent.activity.filter((a) => a !== randomThought);
-            const updatedActivity = [randomThought, ...filteredActivity.slice(0, 2)];
-
-            // Cycle status for high-fidelity look
-            const statuses: Agent["status"][] = ["ACTIVE", "ANALYZING", "EXECUTING"];
-            const newStatus =
-              agent.id === "trade-execution" && Math.random() > 0.6
-                ? "IDLE"
-                : statuses[Math.floor(Math.random() * statuses.length)];
-
-            return {
-              ...agent,
-              confidence: newConfidence,
-              activity: updatedActivity,
-              status: newStatus,
-            };
-          }
-          return agent;
-        })
-      );
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [activeToggles]);
-
   const toggleAgent = (id: string) => {
-    setActiveToggles((prev) => {
-      const state = !prev[id];
-      // Update agent stats immediately
-      setAgents((prevAgents) =>
-        prevAgents.map((agent) => {
-          if (agent.id === id) {
-            return {
-              ...agent,
-              status: state ? "ACTIVE" : "IDLE",
-              health: state ? "HEALTHY" : "OFFLINE",
-            };
-          }
-          return agent;
-        })
-      );
-      return { ...prev, [id]: state };
-    });
+    setActiveToggles((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const getStatusColor = (status: Agent["status"], active: boolean) => {
+  const getStatusColor = (status: AgentDiagnostic["status"], active: boolean) => {
     if (!active) return "bg-zinc-600 text-zinc-400";
     switch (status) {
       case "ANALYZING":
@@ -251,7 +37,7 @@ export default function AgentsDashboard() {
     }
   };
 
-  const getStatusLabel = (status: Agent["status"], active: boolean) => {
+  const getStatusLabel = (status: AgentDiagnostic["status"], active: boolean) => {
     if (!active) return "OFFLINE";
     return status;
   };
@@ -264,17 +50,32 @@ export default function AgentsDashboard() {
           <h1 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
             <span>🤖</span> AI Agents Dashboard
           </h1>
-          <p className="text-zinc-500 text-xs mt-1">
-            Real-time execution status, confidence metrics, and activity tracking for specialized trading agents
+          <p className="text-zinc-500 text-xs mt-1 flex items-center gap-1.5">
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${
+                socketStatus === "CONNECTED"
+                  ? "bg-emerald-500"
+                  : socketStatus === "CONNECTING"
+                  ? "bg-amber-500 animate-pulse"
+                  : "bg-zinc-600"
+              }`}
+            />
+            {socketStatus === "CONNECTED"
+              ? "System Status: All agents operational and receiving live WebSocket ticks"
+              : "Connecting to WebSocket for live agent reasoning..."}
           </p>
         </div>
-        <div className="text-xs text-zinc-400 bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
-          <span>System Status:</span>
-          <span className="font-bold text-zinc-100 uppercase">All agents operational</span>
+      </div>
+
+      {/* Consensus Panel */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+        <h3 className="text-zinc-100 font-semibold text-sm mb-3">Live Multi-Agent Consensus Decision</h3>
+        <div className="bg-zinc-950 border border-zinc-850 p-4 rounded text-sm text-zinc-300 font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <p className="flex-1">{latestConsensusReasoning}</p>
+          <div className="flex flex-col items-end shrink-0">
+            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider mb-1">Consensus Confidence</span>
+            <span className="text-xl font-extrabold text-blue-400">{latestConsensusConfidence}%</span>
+          </div>
         </div>
       </div>
 

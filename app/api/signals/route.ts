@@ -61,3 +61,50 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Failed to fetch signals" }, { status: 500 });
   }
 }
+
+export async function POST(request: NextRequest) {
+  const user = getSessionUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { signals, consensus } = await request.json();
+    if (!signals || typeof signals !== "object") {
+      return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
+    }
+
+    // Save individual signals
+    const createPromises = Object.values(signals).map((sig: any) => 
+      prisma.agentSignal.create({
+        data: {
+          symbol: sig.symbol,
+          agentId: sig.agentId,
+          type: sig.type,
+          confidence: sig.confidence,
+          reason: sig.reason,
+          riskScore: sig.riskScore,
+        }
+      })
+    );
+
+    await Promise.all(createPromises);
+
+    // Also persist consensus to ExecutionLog for the UI to read
+    if (consensus) {
+      await prisma.executionLog.create({
+        data: {
+          userId: user.id,
+          level: "CONSENSUS",
+          message: consensus.reasoning,
+          details: JSON.stringify(consensus),
+        }
+      });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error("POST /api/signals error:", error);
+    return NextResponse.json({ ok: false, error: String(error) }, { status: 500 });
+  }
+}

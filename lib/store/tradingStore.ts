@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { Position, Trade, Order, AgentSignal, AgentDiagnostic, PortfolioStats, Portfolio } from "../types/trading";
 import { executeSimulatedOrder, closeSimulatedPosition } from "../services/tradingEngine";
-import { syncPortfolio, syncTrade, syncPosition, deletePosition, syncOrder, deleteOrder } from "../services/dbSync";
-import { calculatePortfolioStats, SEED_CLOSED_TRADES } from "../services/portfolioService";
+import { syncPortfolio, syncTrade, syncPosition, deletePosition, syncOrder, deleteOrder, syncSignals } from "../services/dbSync";
+import { calculatePortfolioStats } from "../services/portfolioService";
 import { validateOrderExecution, checkMarginLiquidation } from "../services/riskManager";
 import { evaluatePendingOrders } from "../services/tradingEngine";
 import { coordinateAgentConsensus } from "../services/agentCoordinator";
@@ -64,7 +64,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
   const initialBalance = savedBalance ? parseFloat(savedBalance) : INITIAL_BALANCE;
   const initialPositions = savedPositions ? JSON.parse(savedPositions) : [];
   const initialOrders = savedOrders ? JSON.parse(savedOrders) : [];
-  const initialHistory = savedHistory ? JSON.parse(savedHistory) : SEED_CLOSED_TRADES;
+  const initialHistory = savedHistory ? JSON.parse(savedHistory) : [];
 
 
   // Pre-seed agent diagnostic states matching the beautiful UI
@@ -431,7 +431,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     updateKlineClose: (symbol, closePrice, historyPrices) => {
       const state = get();
       // Run AI consensus engine on candle close!
-      const stats = calculatePortfolioStats(state.balance, state.positions, state.history);
+      const stats = calculatePortfolioStats(state.balance, state.positions, state.history, state.portfolioMetrics);
       const decision = coordinateAgentConsensus(
         symbol,
         historyPrices,
@@ -503,6 +503,17 @@ export const useTradingStore = create<TradingStore>((set, get) => {
             }
           }
         }
+      }
+
+      if (isClient) {
+        syncSignals({
+          signals: decision.agentSignals,
+          consensus: {
+            type: decision.action,
+            confidence: decision.confidence,
+            reasoning: decision.reasoning
+          }
+        });
       }
 
       set({
@@ -692,26 +703,25 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       }
     },
 
-    // Reset paper account action
     resetStore: () => {
       set({
         balance: INITIAL_BALANCE,
         positions: [],
         pendingOrders: [],
-        history: SEED_CLOSED_TRADES,
+        history: [],
       });
       if (isClient) {
         localStorage.setItem("quant_balance_z", INITIAL_BALANCE.toString());
         localStorage.setItem("quant_positions_z", JSON.stringify([]));
         localStorage.setItem("quant_orders_z", JSON.stringify([]));
-        localStorage.setItem("quant_history_z", JSON.stringify(SEED_CLOSED_TRADES));
+        localStorage.setItem("quant_history_z", JSON.stringify([]));
       }
     },
 
     // Portfolio metrics aggregator (feeds analytics charts)
     getStats: () => {
       const state = get();
-      return calculatePortfolioStats(state.balance, state.positions, state.history);
+      return calculatePortfolioStats(state.balance, state.positions, state.history, state.portfolioMetrics);
     },
   };
 });

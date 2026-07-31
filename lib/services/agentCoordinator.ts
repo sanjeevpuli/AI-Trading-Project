@@ -1,18 +1,10 @@
 import { AgentSignal } from "../types/trading";
-import { calculateEMA, calculateRSI, calculateMACD } from "../indicators";
-
-/**
- * Computes volatility percentage based on recent close prices.
- */
-export function calculateVolatility(prices: number[]): number {
-  if (prices.length < 5) return 1.5;
-  const avg = prices.reduce((s, p) => s + p, 0) / prices.length;
-  if (avg === 0) return 0;
-  const sqDiffs = prices.map((p) => Math.pow(p - avg, 2));
-  const variance = sqDiffs.reduce((s, d) => s + d, 0) / prices.length;
-  const stdDev = Math.sqrt(variance);
-  return (stdDev / avg) * 100; // Returns volatility percentage
-}
+import { evaluateTechnical } from "./ai/technical";
+import { evaluateSentiment } from "./ai/sentiment";
+import { evaluateMarketRegime } from "./ai/market";
+import { evaluateRisk } from "./ai/risk";
+import { evaluateAllocation } from "./ai/allocation";
+import { calculateEMA } from "../indicators";
 
 export interface ConsolidatedDecision {
   action: "BUY" | "SELL" | "HOLD";
@@ -46,166 +38,27 @@ export function coordinateAgentConsensus(
     return defaultDecision;
   }
 
-  const currentPrice = prices[prices.length - 1];
-
-  // 1. Technical Agent Evaluation (Weight: 35%)
-  const rsiVals = calculateRSI(prices, 14);
+  // Pre-calculate common indicators needed by multiple agents
   const ema20Vals = calculateEMA(prices, 20);
-  const ema50Vals = calculateEMA(prices, 30); // Use 30 for safety on smaller price vectors
-  const macdData = calculateMACD(prices, 12, 26, 9);
-
-  const rsi = rsiVals.length > 0 ? rsiVals[rsiVals.length - 1] : 50;
+  const ema50Vals = calculateEMA(prices, 30);
+  const currentPrice = prices[prices.length - 1];
   const ema20 = ema20Vals.length > 0 ? ema20Vals[ema20Vals.length - 1] : currentPrice;
   const ema50 = ema50Vals.length > 0 ? ema50Vals[ema50Vals.length - 1] : currentPrice;
-  const hist = macdData.histogram.length > 0 ? macdData.histogram[macdData.histogram.length - 1] : 0;
 
-  let techType: "BUY" | "SELL" | "HOLD" = "HOLD";
-  let techConf = 50;
-  let techReason = "MACD histogram and RSI indicator values represent ranging market conditions.";
-
-  if (rsi < 35) {
-    techType = "BUY";
-    techConf = rsi < 25 ? 90 : 78;
-    techReason = `Asset is oversold (RSI: ${rsi.toFixed(1)}). Reversal expected.`;
-  } else if (rsi > 65) {
-    techType = "SELL";
-    techConf = rsi > 75 ? 92 : 80;
-    techReason = `Asset is overbought (RSI: ${rsi.toFixed(1)}). Mean reversion expected.`;
-  } else if (ema20 > ema50 && hist > 0) {
-    techType = "BUY";
-    techConf = 68;
-    techReason = `Bullish trend confirmed by EMA crossover (20 > 50) and rising MACD momentum.`;
-  } else if (ema20 < ema50 && hist < 0) {
-    techType = "SELL";
-    techConf = 70;
-    techReason = `Bearish trend confirmed by EMA crossover (20 < 50) and downward MACD momentum.`;
-  }
-
-  const techSignal: AgentSignal = {
-    id: `SIG-TECH-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-    agentId: "technical-analysis",
-    symbol,
-    type: techType,
-    confidence: techConf,
-    reason: techReason,
-    riskScore: rsi < 25 || rsi > 75 ? 4 : 2,
-    timestamp: new Date().toISOString(),
-  };
+  // 1. Technical Agent Evaluation (Weight: 35%)
+  const techSignal = evaluateTechnical(symbol, prices);
 
   // 2. Sentiment Agent Evaluation (Weight: 20%)
-  // Simulates scanning social streams, news feeds, and ETF flow volumes.
-  // Tied to short term price momentum to look reactive and real.
-  const priceMomentum = prices[prices.length - 1] - prices[prices.length - 5];
-  let sentType: "BUY" | "SELL" | "HOLD" = "HOLD";
-  let sentConf = 60;
-  let sentReason = "News headlines and Twitter sentiment are moderately balanced.";
-
-  if (priceMomentum > 0) {
-    sentType = "BUY";
-    sentConf = 75;
-    sentReason = "Pulsing positive headlines: strong retail social interest and high institutional inflows.";
-  } else if (priceMomentum < 0) {
-    sentType = "SELL";
-    sentConf = 78;
-    sentReason = "Social channels lean pessimistic: fear of localized price dump, macro resistance held.";
-  }
-
-  const sentSignal: AgentSignal = {
-    id: `SIG-SENT-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-    agentId: "sentiment-analysis",
-    symbol,
-    type: sentType,
-    confidence: sentConf,
-    reason: sentReason,
-    riskScore: 3,
-    timestamp: new Date().toISOString(),
-  };
+  const sentSignal = evaluateSentiment(symbol, prices);
 
   // 3. Market Regime Agent Evaluation (Weight: 15%)
-  // Detects Volatility and primary trend regimes.
-  const vol = calculateVolatility(prices);
-  let regimeType: "BUY" | "SELL" | "HOLD" = "HOLD";
-  let regimeConf = 65;
-  let regimeReason = "Market is in a standard low-volatility accumulation regime.";
-
-  if (vol > 2.5) {
-    regimeType = "HOLD";
-    regimeConf = 85;
-    regimeReason = `Extreme Volatility detected (${vol.toFixed(2)}%). Advise holding cash margin buffer.`;
-  } else if (ema20 > ema50) {
-    regimeType = "BUY";
-    regimeConf = 70;
-    regimeReason = "Confirmed macro Bullish regime - buy trend retracements.";
-  } else if (ema20 < ema50) {
-    regimeType = "SELL";
-    regimeConf = 72;
-    regimeReason = "Confirmed macro Bearish regime - sell resistance bounces.";
-  }
-
-  const regimeSignal: AgentSignal = {
-    id: `SIG-REGIME-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-    agentId: "market-analysis",
-    symbol,
-    type: regimeType,
-    confidence: regimeConf,
-    reason: regimeReason,
-    riskScore: vol > 2.5 ? 5 : 2,
-    timestamp: new Date().toISOString(),
-  };
+  const regimeSignal = evaluateMarketRegime(symbol, prices, ema20, ema50);
 
   // 4. Risk Agent Evaluation (Weight: 15%)
-  // Adjusts stance based on account drawdown status.
-  let riskType: "BUY" | "SELL" | "HOLD" = "HOLD";
-  let riskConf = 90;
-  let riskReason = "Capital reserves healthy. Standard risk metrics apply.";
-
-  if (portfolioDrawdown > 8.0) {
-    riskType = "HOLD";
-    riskConf = 95;
-    riskReason = `Critical account drawdown is high (${portfolioDrawdown.toFixed(1)}%). Sizing down to preserve capital.`;
-  } else {
-    riskType = techType; // Matches technical bias
-    riskConf = 80;
-    riskReason = "Risk constraints nominal. Sizing is permitted.";
-  }
-
-  const riskSignal: AgentSignal = {
-    id: `SIG-RISK-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-    agentId: "risk-management",
-    symbol,
-    type: riskType,
-    confidence: riskConf,
-    reason: riskReason,
-    riskScore: portfolioDrawdown > 8.0 ? 5 : 1,
-    timestamp: new Date().toISOString(),
-  };
+  const riskSignal = evaluateRisk(symbol, portfolioDrawdown, techSignal.type);
 
   // 5. Portfolio Allocation Agent (Weight: 15%)
-  // Allocates weightings between active perp holdings.
-  let allocType: "BUY" | "SELL" | "HOLD" = "HOLD";
-  let allocConf = 75;
-  let allocReason = "Portfolio weightings standard. Ready to add risk.";
-
-  if (portfolioExposure > 75.0) {
-    allocType = "HOLD";
-    allocConf = 90;
-    allocReason = `Active capital exposure is elevated (${portfolioExposure.toFixed(1)}%). Rebalancing to avoid leverage risk.`;
-  } else {
-    allocType = techType;
-    allocConf = 75;
-    allocReason = `Net exposure is low (${portfolioExposure.toFixed(1)}%). Adding risk to active asset allowed.`;
-  }
-
-  const allocSignal: AgentSignal = {
-    id: `SIG-ALLOC-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-    agentId: "portfolio-allocation",
-    symbol,
-    type: allocType,
-    confidence: allocConf,
-    reason: allocReason,
-    riskScore: portfolioExposure > 75.0 ? 4 : 2,
-    timestamp: new Date().toISOString(),
-  };
+  const allocSignal = evaluateAllocation(symbol, portfolioExposure, techSignal.type);
 
   // 6. MULTI-AGENT CONSENSUS VOTING
   // Weights: Tech (35%), Sent (20%), Regime (15%), Risk (15%), Alloc (15%)

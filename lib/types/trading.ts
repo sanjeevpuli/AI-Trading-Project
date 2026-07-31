@@ -102,3 +102,14 @@ export interface PortfolioStats {
   valueAtRisk: number;
   equityCurve: { time: string; value: number }[];
 }
+
+export interface PortfolioMetrics {
+  id?: string;
+  userId?: string;
+  timestamp: string;
+  totalValue: number;
+  cash: number;
+  realizedPnL: number;
+  unrealizedPnL: number;
+  drawDown: number;
+}

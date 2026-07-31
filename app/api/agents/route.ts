@@ -9,11 +9,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const logs = await prisma.executionLog.findMany({
-      where: { userId: user.id },
+    const recentSignals = await prisma.agentSignal.findMany({
       orderBy: { timestamp: "desc" },
-      take: 20,
+      take: 50,
     });
+
+    const getAgentActivity = (agentId: string) => 
+      recentSignals.filter(s => s.agentId === agentId).map(s => `[Auto Signal: ${s.type}] ${s.reason}`);
 
     // We merge logs to static agent representations since no Agent table exists
     const agents = [
@@ -22,35 +24,35 @@ export async function GET(request: NextRequest) {
         name: "Market Analysis Agent",
         status: "ANALYZING",
         health: "HEALTHY",
-        activity: logs.filter(l => l.level === "MARKET").map(l => l.message),
+        activity: getAgentActivity("market-analysis"),
       },
       {
         id: "technical-analysis",
         name: "Technical Analysis Agent",
         status: "EXECUTING",
         health: "HEALTHY",
-        activity: logs.filter(l => l.level === "TECHNICAL").map(l => l.message),
+        activity: getAgentActivity("technical-analysis"),
       },
       {
         id: "sentiment-analysis",
         name: "Sentiment Analysis Agent",
         status: "ACTIVE",
         health: "HEALTHY",
-        activity: logs.filter(l => l.level === "SENTIMENT").map(l => l.message),
+        activity: getAgentActivity("sentiment-analysis"),
       },
       {
         id: "risk-management",
         name: "Risk Management Agent",
         status: "ACTIVE",
         health: "HEALTHY",
-        activity: logs.filter(l => l.level === "RISK").map(l => l.message),
+        activity: getAgentActivity("risk-management"),
       },
       {
         id: "portfolio-allocation",
         name: "Portfolio Allocation Agent",
         status: "ACTIVE",
         health: "HEALTHY",
-        activity: logs.filter(l => l.level === "PORTFOLIO").map(l => l.message),
+        activity: getAgentActivity("portfolio-allocation"),
       }
     ];
 

@@ -86,3 +86,33 @@ export async function deleteOrder(id: string) {
     console.error('Failed to delete order:', error);
   }
 }
+
+/**
+ * Synchronize a portfolio metrics snapshot via API route.
+ */
+export async function syncPortfolioMetrics(metrics: { totalValue: number, cash: number, realizedPnL: number, unrealizedPnL: number, drawDown: number }) {
+  try {
+    await fetch('/api/portfolio/metrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metrics),
+    });
+  } catch (error) {
+    console.error('Failed to sync portfolio metrics:', error);
+  }
+}
+
+/**
+ * Synchronize AI agent signals to the database.
+ */
+export async function syncSignals(payload: { signals: Record<string, any>, consensus: any }) {
+  try {
+    await fetch('/api/signals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    console.error('Failed to sync signals:', error);
+  }
+}
