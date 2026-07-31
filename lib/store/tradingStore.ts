@@ -5,7 +5,7 @@ import { syncPortfolio, syncTrade, syncPosition, deletePosition } from "../servi
 import { calculatePortfolioStats, SEED_CLOSED_TRADES } from "../services/portfolioService";
 import { validateOrderExecution, checkMarginLiquidation } from "../services/riskManager";
 import { coordinateAgentConsensus } from "../services/agentCoordinator";
-import { SocketStatus } from "../services/binanceService";
+import { SocketStatus, binanceWebsocketService } from "../services/binanceService";
 
 interface TradingStore {
   selectedAsset: string;
@@ -32,9 +32,12 @@ interface TradingStore {
   portfolioMetrics: { timestamp: string; totalValue: number; cash: number; realizedPnL: number; unrealizedPnL: number; drawDown: number }[];
   isDashboardLoading: boolean;
   dashboardError: string | null;
+  isMarketLoading: boolean;
+  marketError: string | null;
 
   // Actions
   fetchDashboardData: () => Promise<void>;
+  fetchMarketData: (symbols: string[]) => Promise<void>;
   updatePrice: (symbol: string, price: number, changePercent: number) => void;
   updateKlineClose: (symbol: string, closePrice: number, historyPrices: number[]) => void;
   executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => { success: boolean; error?: string };
@@ -154,6 +157,8 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     portfolioMetrics: [],
     isDashboardLoading: true,
     dashboardError: null,
+    isMarketLoading: true,
+    marketError: null,
 
     fetchDashboardData: async () => {
       set({ isDashboardLoading: true, dashboardError: null });
@@ -208,6 +213,39 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       } catch (err) {
         console.error("Dashboard fetch error:", err);
         set({ isDashboardLoading: false, dashboardError: String(err) });
+      }
+    },
+
+    fetchMarketData: async (symbols) => {
+      set({ isMarketLoading: true, marketError: null });
+      try {
+        const res = await fetch(`/api/market?symbols=${encodeURIComponent(JSON.stringify(symbols))}`);
+        if (!res.ok) throw new Error("Failed to load market data");
+        const data = await res.json();
+        
+        const state = get();
+        const nextPrices = { ...state.prices };
+        const nextPriceChanges = { ...state.priceChanges };
+        
+        if (data.symbols && Array.isArray(data.symbols)) {
+          data.symbols.forEach((s: any) => {
+            nextPrices[s.symbol] = s.price;
+            nextPriceChanges[s.symbol] = s.changePercent;
+          });
+        }
+
+        set({
+          prices: nextPrices,
+          priceChanges: nextPriceChanges,
+          isMarketLoading: false,
+        });
+
+        // Initialize WebSockets for the live feed
+        binanceWebsocketService.connect(symbols);
+
+      } catch (err) {
+        console.error("Market fetch error:", err);
+        set({ isMarketLoading: false, marketError: String(err) });
       }
     },
 

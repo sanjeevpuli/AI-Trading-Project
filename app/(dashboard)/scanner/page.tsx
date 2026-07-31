@@ -28,6 +28,8 @@ function getSignal(change: number): { signal: Signal; color: string; bg: string 
 export default function ScannerPage() {
   const prices = useTradingStore((s) => s.prices);
   const priceChanges = useTradingStore((s) => s.priceChanges);
+  const isMarketLoading = useTradingStore((s) => s.isMarketLoading);
+  const socketStatus = useTradingStore((s) => s.socketStatus);
   const setSelectedAsset = useTradingStore((s) => s.setSelectedAsset);
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
@@ -38,8 +40,15 @@ export default function ScannerPage() {
     setMounted(true);
   }, []);
 
-  if (!mounted) {
-    return <div className="flex items-center justify-center min-h-[50vh]"><div className="h-10 w-10 border-4 border-zinc-800 border-t-blue-500 rounded-full animate-spin" /></div>;
+  if (!mounted || isMarketLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 border-4 border-zinc-800 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-zinc-500 text-sm font-medium animate-pulse">Scanning live markets...</p>
+        </div>
+      </div>
+    );
   }
 
   const items = SYMBOLS.map((symbol) => {
@@ -62,7 +71,22 @@ export default function ScannerPage() {
     <div className="flex flex-col gap-6 max-w-[1400px] mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-100">Market Scanner</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-zinc-100">Market Scanner</h1>
+            {socketStatus === "DISCONNECTED" || socketStatus === "ERROR" ? (
+              <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Offline
+              </span>
+            ) : socketStatus === "CONNECTING" ? (
+              <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-xs px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Connecting
+              </span>
+            ) : (
+              <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live
+              </span>
+            )}
+          </div>
           <p className="text-zinc-500 text-sm mt-1">Real-time signal scanning across all tracked assets</p>
         </div>
         <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-1">

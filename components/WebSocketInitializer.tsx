@@ -14,6 +14,9 @@ export default function WebSocketInitializer() {
   const updateKlineClose = useTradingStore((s) => s.updateKlineClose);
   const updateSocketStatus = useTradingStore((s) => s.updateSocketStatus);
 
+  const fetchMarketData = useTradingStore((s) => s.fetchMarketData);
+  const watchlistSymbols = useTradingStore((s) => s.watchlistSymbols);
+
   // Run once on client mount to set up WebSocket listeners.
   useEffect(() => {
     // Subscribe to connection status changes
@@ -42,8 +45,18 @@ export default function WebSocketInitializer() {
       unsubStatus();
       unsubTicker();
       unsubKline();
+      binanceWebsocketService.disconnect();
     };
   }, [updatePrice, updateKlineClose, updateSocketStatus]);
+
+  // Handle dynamic symbol subscriptions
+  useEffect(() => {
+    const baseSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT"];
+    const allSymbols = Array.from(new Set([...baseSymbols, ...watchlistSymbols]));
+    
+    // Fetch initial snapshot and connect websocket
+    fetchMarketData(allSymbols);
+  }, [watchlistSymbols, fetchMarketData]);
 
   // No visual UI – this component only registers side‑effects.
   return null;

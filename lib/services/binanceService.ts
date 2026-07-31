@@ -16,42 +16,78 @@ class BinanceWebsocketService {
   private statusCallbacks: Set<(status: SocketStatus) => void> = new Set();
   private tickerCallbacks: Set<TickerCallback> = new Set();
   private klineCallbacks: Set<KlineCallback> = new Set();
+  
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private lastMessageTime = 0;
+  
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private backoffMs = 1000;
 
+  private currentSymbols: string[] = [];
+
   // Candle price vectors for indicators (compiled from WebSocket stream)
-  private candleHistory: Record<string, number[]> = {
-    BTCUSDT: Array.from({ length: 60 }, (_, i) => 67000 + Math.sin(i) * 300), // Pre-seeded
-    ETHUSDT: Array.from({ length: 60 }, (_, i) => 3800 + Math.sin(i) * 20),
-    SOLUSDT: Array.from({ length: 60 }, (_, i) => 160 + Math.sin(i) * 2),
-  };
+  private candleHistory: Record<string, number[]> = {};
 
   constructor() {
-    // Proactive checking for browser context
-    if (typeof window !== "undefined" && typeof WebSocket !== "undefined") {
-      this.connect();
-    }
+    // Only initialization, connect is explicitly called later
   }
 
-  public connect() {
-    if (this.socket) {
-      this.socket.close();
+  public connect(symbols: string[]) {
+    if (typeof window === "undefined" || typeof WebSocket === "undefined") {
+      return;
+    }
+
+    const newSymbols = Array.from(new Set(symbols.map(s => s.toUpperCase())));
+
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      // Incremental subscription update without dropping connection
+      const currentSet = new Set(this.currentSymbols);
+      const newSet = new Set(newSymbols);
+
+      const added = newSymbols.filter(s => !currentSet.has(s));
+      const removed = this.currentSymbols.filter(s => !newSet.has(s));
+
+      if (added.length > 0) {
+        const addStreams = added.flatMap(s => [`${s.toLowerCase()}@ticker`, `${s.toLowerCase()}@kline_1m`]);
+        this.socket.send(JSON.stringify({
+          method: "SUBSCRIBE",
+          params: addStreams,
+          id: Date.now()
+        }));
+      }
+
+      if (removed.length > 0) {
+        const removeStreams = removed.flatMap(s => [`${s.toLowerCase()}@ticker`, `${s.toLowerCase()}@kline_1m`]);
+        this.socket.send(JSON.stringify({
+          method: "UNSUBSCRIBE",
+          params: removeStreams,
+          id: Date.now() + 1
+        }));
+      }
+
+      this.currentSymbols = newSymbols;
+      return;
+    }
+
+    // Connect from scratch
+    this.currentSymbols = newSymbols;
+
+    if (this.currentSymbols.length === 0) {
+      this.setStatus("DISCONNECTED");
+      return;
     }
 
     this.setStatus("CONNECTING");
     
-    // Combined streams: ticker (for 24h ticker stat ticks) and kline_1m (for high-fidelity technical indicator candles)
-    const streams = [
-      "btcusdt@ticker",
-      "ethusdt@ticker",
-      "solusdt@ticker",
-      "btcusdt@kline_1m",
-      "ethusdt@kline_1m",
-      "solusdt@kline_1m",
-    ].join("/");
-
+    // Combined streams for initial connection
+    const streamNames = this.currentSymbols.flatMap(s => [
+      `${s.toLowerCase()}@ticker`,
+      `${s.toLowerCase()}@kline_1m`
+    ]);
+    
+    const streams = streamNames.join("/");
     const url = `wss://stream.binance.com:9443/stream?streams=${streams}`;
 
     try {
@@ -61,13 +97,19 @@ class BinanceWebsocketService {
         this.setStatus("CONNECTED");
         this.reconnectAttempts = 0;
         this.backoffMs = 1000;
-        console.log("QuantAI: Connected to Binance WebSocket Stream.");
+        this.lastMessageTime = Date.now();
+        console.log(`QuantAI: Connected to Binance WebSocket Streams for ${this.currentSymbols.length} assets.`);
+        this.startHeartbeat();
       };
 
       this.socket.onmessage = (event) => {
+        this.lastMessageTime = Date.now();
         try {
           const payload: StreamMessage = JSON.parse(event.data);
-          this.handleStreamMessage(payload);
+          // Binance sends response payloads for SUBSCRIBE/UNSUBSCRIBE without stream fields
+          if (payload.stream) {
+            this.handleStreamMessage(payload);
+          }
         } catch (err) {
           console.error("QuantAI: Error parsing socket frame:", err);
         }
@@ -81,6 +123,7 @@ class BinanceWebsocketService {
       this.socket.onclose = () => {
         this.setStatus("DISCONNECTED");
         this.socket = null;
+        this.stopHeartbeat();
         this.handleReconnect();
       };
     } catch (e) {
@@ -89,8 +132,44 @@ class BinanceWebsocketService {
       this.handleReconnect();
     }
   }
+  
+  public disconnect() {
+    if (this.socket) {
+      this.socket.onclose = null;
+      this.socket.close();
+      this.socket = null;
+    }
+    this.stopHeartbeat();
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.setStatus("DISCONNECTED");
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      // If no message received for 10 seconds, reconnect
+      if (Date.now() - this.lastMessageTime > 10000) {
+        console.warn("QuantAI: WebSocket heartbeat timeout. Reconnecting...");
+        if (this.socket) {
+          this.socket.close(); // Triggers onclose -> reconnect
+        }
+      }
+    }, 5000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
 
   private handleStreamMessage(msg: StreamMessage) {
+    if (!msg || !msg.stream || !msg.data) return;
+    
     const stream = msg.stream;
     const data = msg.data as unknown as Record<string, unknown>;
 
@@ -112,16 +191,18 @@ class BinanceWebsocketService {
 
       if (isClosed) {
         // Append price and keep history at max 100 elements to save space
-        const history = this.candleHistory[symbol] || [];
+        if (!this.candleHistory[symbol]) {
+          this.candleHistory[symbol] = [];
+        }
+        const history = this.candleHistory[symbol];
         history.push(closePrice);
         if (history.length > 100) {
           history.shift();
         }
-        this.candleHistory[symbol] = history;
       }
 
       this.klineCallbacks.forEach((cb) =>
-        cb(symbol, closePrice, isClosed, this.candleHistory[symbol] || [])
+        cb(symbol, closePrice, isClosed, this.candleHistory[symbol] || [closePrice])
       );
     }
   }
@@ -138,7 +219,7 @@ class BinanceWebsocketService {
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       console.log(`QuantAI: Reconnecting to websocket (Attempt ${this.reconnectAttempts})...`);
-      this.connect();
+      this.connect(this.currentSymbols);
     }, this.backoffMs);
 
     // Exponential Backoff
