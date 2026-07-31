@@ -9,9 +9,9 @@ export default function OpenPositionsTable() {
   const closePosition = useTradingStore((s) => s.closePosition);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden flex flex-col h-full">
-      <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
-        <h2 className="text-zinc-100 font-semibold text-sm flex items-center gap-2">
+    <div className="flex flex-col h-full bg-zinc-900">
+      <div className="p-3 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
+        <h2 className="text-zinc-100 font-semibold text-xs flex items-center gap-2">
           <span>Active Positions</span>
           <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs px-2 py-0.5 rounded-full font-bold">
             {positions.length}

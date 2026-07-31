@@ -1,4 +1,4 @@
-import type { Portfolio, Trade, Position } from '@/lib/types/trading';
+import type { Portfolio, Trade, Position, Order } from '@/lib/types/trading';
 
 /**
  * Synchronize portfolio updates to the database via API route.
@@ -56,5 +56,33 @@ export async function deletePosition(id: string) {
     });
   } catch (error) {
     console.error('Failed to delete position:', error);
+  }
+}
+
+/**
+ * Synchronize a pending limit order via API route.
+ */
+export async function syncOrder(order: Order) {
+  try {
+    await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    });
+  } catch (error) {
+    console.error('Failed to sync order:', error);
+  }
+}
+
+/**
+ * Delete an order (when canceled or filled) via API route.
+ */
+export async function deleteOrder(id: string) {
+  try {
+    await fetch(`/api/orders?id=${id}`, {
+      method: 'DELETE',
+    });
+  } catch (error) {
+    console.error('Failed to delete order:', error);
   }
 }

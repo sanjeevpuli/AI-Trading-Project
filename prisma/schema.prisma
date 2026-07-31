@@ -9,6 +9,29 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+enum PositionType {
+  LONG
+  SHORT
+}
+
+enum OrderStatus {
+  PENDING
+  FILLED
+  CANCELED
+}
+
+enum ExitReason {
+  MANUAL
+  STOP_LOSS
+  TAKE_PROFIT
+  LIQUIDATION
+}
+
 model User {
   id             String             @id @default(uuid())
   email          String             @unique
@@ -20,6 +43,7 @@ model User {
   metricsHistory PortfolioMetrics[]
   positions           Position[]
   trades              Trade[]
+  orders              Order[]
   watchlist           Watchlist?
   passwordResetTokens PasswordResetToken[]
 }
@@ -45,10 +69,10 @@ model Portfolio {
 }
 
 model Trade {
-  id            String   @id @default(uuid())
+  id            String       @id @default(uuid())
   userId        String
   symbol        String
-  type          String
+  type          PositionType
   entryPrice    Float
   exitPrice     Float
   amount        Float
@@ -56,27 +80,43 @@ model Trade {
   pnlPercentage Float
   entryTime     DateTime
   exitTime      DateTime
-  exitReason    String
-  fee           Float    @default(0.0)
-  slippage      Float    @default(0.0)
-  createdAt     DateTime @default(now())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exitReason    ExitReason
+  fee           Float        @default(0.0)
+  slippage      Float        @default(0.0)
+  createdAt     DateTime     @default(now())
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Position {
-  id            String   @id @default(uuid())
+  id            String       @id @default(uuid())
   userId        String
   symbol        String
-  type          String
+  type          PositionType
   entryPrice    Float
   currentPrice  Float
   amount        Float
   stopLoss      Float?
   takeProfit    Float?
-  timestamp     DateTime @default(now())
-  pnl           Float    @default(0.0)
-  pnlPercentage Float    @default(0.0)
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  timestamp     DateTime     @default(now())
+  pnl           Float        @default(0.0)
+  pnlPercentage Float        @default(0.0)
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id          String       @id @default(uuid())
+  userId      String
+  symbol      String
+  type        PositionType
+  orderType   OrderType
+  status      OrderStatus  @default(PENDING)
+  amount      Float
+  price       Float
+  stopLoss    Float?
+  takeProfit  Float?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AgentSignal {

@@ -1,6 +1,6 @@
 export interface Trade {
   id: string;
-  userId?: string; // optional for DB sync
+  userId?: string;
   symbol: string;
   type: "LONG" | "SHORT";
   entryPrice: number;
@@ -10,7 +10,7 @@ export interface Trade {
   pnlPercentage: number;
   entryTime: string;
   exitTime: string;
-  exitReason: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT";
+  exitReason: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION";
   fee: number;
   slippage: number;
 }
@@ -32,13 +32,17 @@ export interface Position {
 
 export interface Order {
   id: string;
+  userId?: string;
   symbol: string;
   type: "LONG" | "SHORT";
+  orderType: "MARKET" | "LIMIT";
+  status: "PENDING" | "FILLED" | "CANCELED";
   amount: number;
   price: number;
   stopLoss?: number;
   takeProfit?: number;
-  timestamp: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AgentSignal {

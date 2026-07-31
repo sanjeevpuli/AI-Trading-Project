@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { Position, Trade, AgentSignal, AgentDiagnostic, PortfolioStats, Portfolio } from "../types/trading";
+import { Position, Trade, Order, AgentSignal, AgentDiagnostic, PortfolioStats, Portfolio } from "../types/trading";
 import { executeSimulatedOrder, closeSimulatedPosition } from "../services/tradingEngine";
-import { syncPortfolio, syncTrade, syncPosition, deletePosition } from "../services/dbSync";
+import { syncPortfolio, syncTrade, syncPosition, deletePosition, syncOrder, deleteOrder } from "../services/dbSync";
 import { calculatePortfolioStats, SEED_CLOSED_TRADES } from "../services/portfolioService";
 import { validateOrderExecution, checkMarginLiquidation } from "../services/riskManager";
+import { evaluatePendingOrders } from "../services/tradingEngine";
 import { coordinateAgentConsensus } from "../services/agentCoordinator";
 import { SocketStatus, binanceWebsocketService } from "../services/binanceService";
 
@@ -20,6 +21,7 @@ interface TradingStore {
   // Paper Trading & Portfolio state
   balance: number;
   positions: Position[];
+  pendingOrders: Order[];
   history: Trade[];
   
   // AI Agent states
@@ -40,8 +42,9 @@ interface TradingStore {
   fetchMarketData: (symbols: string[]) => Promise<void>;
   updatePrice: (symbol: string, price: number, changePercent: number) => void;
   updateKlineClose: (symbol: string, closePrice: number, historyPrices: number[]) => void;
-  executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => { success: boolean; error?: string };
-  closePosition: (id: string, reason?: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT") => void;
+  executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; orderType: "MARKET" | "LIMIT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => { success: boolean; error?: string };
+  cancelOrder: (id: string) => void;
+  closePosition: (id: string, reason?: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION") => void;
   resetStore: () => void;
   
   // Analytics selector
@@ -55,10 +58,12 @@ export const useTradingStore = create<TradingStore>((set, get) => {
   const isClient = typeof window !== "undefined";
   const savedBalance = isClient ? localStorage.getItem("quant_balance_z") : null;
   const savedPositions = isClient ? localStorage.getItem("quant_positions_z") : null;
+  const savedOrders = isClient ? localStorage.getItem("quant_orders_z") : null;
   const savedHistory = isClient ? localStorage.getItem("quant_history_z") : null;
 
   const initialBalance = savedBalance ? parseFloat(savedBalance) : INITIAL_BALANCE;
   const initialPositions = savedPositions ? JSON.parse(savedPositions) : [];
+  const initialOrders = savedOrders ? JSON.parse(savedOrders) : [];
   const initialHistory = savedHistory ? JSON.parse(savedHistory) : SEED_CLOSED_TRADES;
 
 
@@ -148,6 +153,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     socketStatus: "DISCONNECTED",
     balance: initialBalance,
     positions: initialPositions,
+    pendingOrders: initialOrders,
     history: initialHistory,
     agentDiagnostics: initialDiagnostics,
     agentSignals: {},
@@ -163,10 +169,11 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     fetchDashboardData: async () => {
       set({ isDashboardLoading: true, dashboardError: null });
       try {
-        const [dashRes, sigRes, agentsRes] = await Promise.all([
+        const [dashRes, sigRes, agentsRes, ordersRes] = await Promise.all([
           fetch("/api/dashboard"),
           fetch("/api/signals"),
-          fetch("/api/agents")
+          fetch("/api/agents"),
+          fetch("/api/orders")
         ]);
 
         if (!dashRes.ok) throw new Error("Failed to load dashboard data");
@@ -174,10 +181,12 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         const dashData = await dashRes.json();
         const sigData = await sigRes.json();
         const agentsData = await agentsRes.json();
+        const ordersData = ordersRes.ok ? await ordersRes.json() : [];
 
         // Check if there is portfolio data, otherwise fallback to local initial state
         const nextBalance = dashData.portfolio?.balance ?? initialBalance;
         const nextPositions = dashData.activePositions ?? initialPositions;
+        const nextOrders = ordersData.length > 0 ? ordersData : initialOrders;
         const nextHistory = dashData.executionHistory ?? initialHistory;
         
         // Agent diagnostics merging: merge the static UI setup with real logs from DB
@@ -200,6 +209,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         set({
           balance: nextBalance,
           positions: nextPositions,
+          pendingOrders: nextOrders,
           history: nextHistory,
           watchlistSymbols: dashData.watchlist || [],
           portfolioMetrics: dashData.metrics || [],
@@ -261,6 +271,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       
       let nextBalance = state.balance;
       let nextHistory = [...state.history];
+      let nextOrders = [...state.pendingOrders];
       const closedPositions: string[] = [];
 
       // 1. Recalculate all open positions based on new mark-prices
@@ -287,7 +298,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       });
 
       // 2. Evaluate Automatic SL/TP limits
-      const evaluatedPositions = nextPositions.filter((pos) => {
+      let evaluatedPositions = nextPositions.filter((pos) => {
         // If not matching symbol, keep it
         if (pos.symbol !== symbol) return true;
 
@@ -313,7 +324,75 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         return true;
       });
 
-      // 3. Margin safety calculations / liquidation stop-outs
+      // 3. Evaluate pending limit orders
+      const triggeredOrders = evaluatePendingOrders(nextOrders, nextPrices);
+      for (const order of triggeredOrders) {
+        // Pass through Risk Manager before processing
+        const riskValidation = validateOrderExecution(order, nextBalance, evaluatedPositions);
+        
+        if (!riskValidation.allowed) {
+          // If risk check fails, we cancel the order to prevent execution
+          console.warn(`Pending order ${order.id} failed risk check: ${riskValidation.error}`);
+          nextOrders = nextOrders.filter(o => o.id !== order.id);
+          if (typeof window !== "undefined") {
+            deleteOrder(order.id);
+          }
+          continue;
+        }
+
+        // Execute it as market order now that it crossed
+        const result = executeSimulatedOrder(order, nextBalance);
+        if (result.success && result.position) {
+          const fillCost = order.amount * result.executionPrice;
+          const totalDebit = fillCost + result.fee;
+          nextBalance -= totalDebit;
+          evaluatedPositions = [result.position, ...evaluatedPositions];
+          
+          if (typeof window !== "undefined") {
+            syncPosition(result.position);
+            syncTrade({
+              id: "",
+              userId: "",
+              symbol: order.symbol,
+              type: order.type,
+              entryPrice: result.executionPrice,
+              exitPrice: result.executionPrice,
+              amount: order.amount,
+              pnl: 0,
+              pnlPercentage: 0,
+              entryTime: new Date().toISOString(),
+              exitTime: new Date().toISOString(),
+              exitReason: "MANUAL",
+              fee: result.fee,
+              slippage: result.slippageAmount,
+            } as Trade);
+            syncPortfolio({
+              id: "",
+              totalValue: nextBalance,
+              cash: nextBalance,
+              unrealizedPnL: 0,
+              realizedPnL: 0,
+              winRate: 0,
+              sharpeRatio: 0,
+              maxDrawdown: 0,
+              leverage: 1,
+              exposure: 0,
+              netBeta: 0,
+              valueAtRisk: 0,
+              equityCurve: [] as { time: string; value: number }[],
+            } as Portfolio);
+          }
+        }
+        
+        // Remove from pending orders list
+        nextOrders = nextOrders.filter(o => o.id !== order.id);
+        
+        if (typeof window !== "undefined") {
+          deleteOrder(order.id);
+        }
+      }
+
+      // 4. Margin safety calculations / liquidation stop-outs
       const liquidationCheck = checkMarginLiquidation(nextBalance, evaluatedPositions);
       let finalPositions = evaluatedPositions;
 
@@ -321,7 +400,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         // Force close all open perp contracts at current mark prices!
         evaluatedPositions.forEach((pos) => {
           const currentMarkPrice = nextPrices[pos.symbol] || pos.currentPrice;
-          const { closedTrade, cashReturn } = closeSimulatedPosition(pos, currentMarkPrice, "STOP_LOSS");
+          const { closedTrade, cashReturn } = closeSimulatedPosition(pos, currentMarkPrice, "LIQUIDATION");
           nextBalance += cashReturn;
           nextHistory = [closedTrade, ...nextHistory];
         });
@@ -333,6 +412,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       if (isClient) {
         localStorage.setItem("quant_balance_z", nextBalance.toString());
         localStorage.setItem("quant_positions_z", JSON.stringify(finalPositions));
+        localStorage.setItem("quant_orders_z", JSON.stringify(nextOrders));
         localStorage.setItem("quant_history_z", JSON.stringify(nextHistory));
       }
 
@@ -342,6 +422,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         priceChanges: nextPriceChanges,
         balance: nextBalance,
         positions: finalPositions,
+        pendingOrders: nextOrders,
         history: nextHistory,
       });
     },
@@ -444,7 +525,36 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         return { success: false, error: riskValidation.error };
       }
 
-      // 2. Compute fill slippage and taker exchange fees
+      if (order.orderType === "LIMIT") {
+        const newOrder: Order = {
+          id: `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+          symbol: order.symbol,
+          type: order.type,
+          orderType: "LIMIT",
+          status: "PENDING",
+          amount: order.amount,
+          price: order.price,
+          stopLoss: order.stopLoss,
+          takeProfit: order.takeProfit,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const nextOrders = [newOrder, ...state.pendingOrders];
+        set({ pendingOrders: nextOrders });
+
+        if (isClient) {
+          localStorage.setItem("quant_orders_z", JSON.stringify(nextOrders));
+        }
+
+        if (typeof window !== "undefined") {
+          syncOrder(newOrder);
+        }
+
+        return { success: true };
+      }
+
+      // 2. Compute fill slippage and taker exchange fees (MARKET orders)
       const result = executeSimulatedOrder(order, state.balance);
       if (!result.success || !result.position) {
         return { success: false, error: result.error };
@@ -506,6 +616,18 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       }
 
       return { success: true };
+    },
+
+    cancelOrder: (id) => {
+      const state = get();
+      const nextOrders = state.pendingOrders.filter((o) => o.id !== id);
+      set({ pendingOrders: nextOrders });
+      if (isClient) {
+        localStorage.setItem("quant_orders_z", JSON.stringify(nextOrders));
+      }
+      if (typeof window !== "undefined") {
+        deleteOrder(id);
+      }
     },
 
     // Position Closing Action
@@ -575,11 +697,13 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       set({
         balance: INITIAL_BALANCE,
         positions: [],
+        pendingOrders: [],
         history: SEED_CLOSED_TRADES,
       });
       if (isClient) {
         localStorage.setItem("quant_balance_z", INITIAL_BALANCE.toString());
         localStorage.setItem("quant_positions_z", JSON.stringify([]));
+        localStorage.setItem("quant_orders_z", JSON.stringify([]));
         localStorage.setItem("quant_history_z", JSON.stringify(SEED_CLOSED_TRADES));
       }
     },

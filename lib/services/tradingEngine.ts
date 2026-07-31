@@ -1,4 +1,4 @@
-import { Position, Trade } from "../types/trading";
+import { Position, Trade, Order } from "../types/trading";
 import { calculatePositionPnL } from "../tradingEngine";
 
 const TAKER_FEE_PCT = 0.04; // 0.04% Binance Futures standard perp taker fee rate
@@ -83,7 +83,7 @@ export function executeSimulatedOrder(
 export function closeSimulatedPosition(
   position: Position,
   exitPrice: number,
-  reason: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT"
+  reason: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION"
 ): {
   closedTrade: Trade;
   cashReturn: number;
@@ -129,4 +129,33 @@ export function closeSimulatedPosition(
     cashReturn,
     fee,
   };
+}
+
+/**
+ * Evaluates pending LIMIT orders against current market prices.
+ * Returns orders that should be filled based on price crossing.
+ */
+export function evaluatePendingOrders(
+  pendingOrders: Order[],
+  prices: Record<string, number>
+): Order[] {
+  const triggeredOrders: Order[] = [];
+
+  for (const order of pendingOrders) {
+    if (order.status !== "PENDING" || order.orderType !== "LIMIT") continue;
+
+    const currentPrice = prices[order.symbol];
+    if (!currentPrice || currentPrice <= 0) continue;
+
+    // For LONG limit order: triggers if current price <= limit price
+    if (order.type === "LONG" && currentPrice <= order.price) {
+      triggeredOrders.push(order);
+    }
+    // For SHORT limit order: triggers if current price >= limit price
+    else if (order.type === "SHORT" && currentPrice >= order.price) {
+      triggeredOrders.push(order);
+    }
+  }
+
+  return triggeredOrders;
 }

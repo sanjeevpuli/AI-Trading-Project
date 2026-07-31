@@ -5,6 +5,7 @@ import { useTradingStore } from "@/lib/store/tradingStore";
 import ChartSection from "@/components/dashboard/ChartSection";
 import TradingPanel from "./TradingPanel";
 import OpenPositionsTable from "./OpenPositionsTable";
+import PendingOrdersTable from "./PendingOrdersTable";
 import ClosedTradesHistory from "./ClosedTradesHistory";
 
 export default function PaperTradingEngine() {
@@ -12,6 +13,7 @@ export default function PaperTradingEngine() {
   const latestConsensusReasoning = useTradingStore((s) => s.latestConsensusReasoning);
   const latestConsensusConfidence = useTradingStore((s) => s.latestConsensusConfidence);
   const [showConsensus, setShowConsensus] = useState(true);
+  const [activeTab, setActiveTab] = useState<"positions" | "orders">("positions");
 
   const isConnected = socketStatus === "CONNECTED";
 
@@ -61,12 +63,32 @@ export default function PaperTradingEngine() {
         </div>
       </div>
 
-      {/* Tables row: Active positions and Completed executions */}
+      {/* Tables row: Active positions/Orders and Completed executions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="min-h-[350px]">
-          <OpenPositionsTable />
+        <div className="flex flex-col h-[380px] bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+          <div className="flex border-b border-zinc-800 bg-zinc-950">
+            <button
+              onClick={() => setActiveTab("positions")}
+              className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                activeTab === "positions" ? "text-blue-400 border-b-2 border-blue-500 bg-zinc-900" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Open Positions
+            </button>
+            <button
+              onClick={() => setActiveTab("orders")}
+              className={`flex-1 py-2 text-xs font-semibold transition-colors ${
+                activeTab === "orders" ? "text-amber-400 border-b-2 border-amber-500 bg-zinc-900" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              Pending Orders
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {activeTab === "positions" ? <OpenPositionsTable /> : <PendingOrdersTable />}
+          </div>
         </div>
-        <div className="min-h-[350px]">
+        <div className="h-[380px]">
           <ClosedTradesHistory />
         </div>
       </div>
