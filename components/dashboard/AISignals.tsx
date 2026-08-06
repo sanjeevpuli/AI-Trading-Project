@@ -46,57 +46,92 @@ export default function AISignals() {
         </span>
       </div>
 
-      <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+      <div className="flex-1 p-4 overflow-y-auto">
         {dashboardError ? (
           <div className="flex flex-col items-center justify-center py-6 text-center">
             <p className="text-xs text-rose-400 mb-2">Failed to sync AI consensus signals</p>
           </div>
         ) : !mounted || (isDashboardLoading && signalsList.length === 0) ? (
-          Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="animate-pulse bg-zinc-800/50 rounded-lg p-3 space-y-3 border border-zinc-800">
-              <div className="flex justify-between">
-                <div className="h-4 w-16 bg-zinc-700 rounded" />
-                <div className="h-5 w-12 bg-zinc-700 rounded" />
-              </div>
-              <div className="h-3 w-full bg-zinc-700 rounded" />
-              <div className="flex gap-2">
-                <div className="h-3 w-10 bg-zinc-700 rounded" />
-                <div className="h-3 w-10 bg-zinc-700 rounded" />
+          <div className="animate-pulse space-y-4">
+            <div className="h-6 w-32 bg-zinc-800 mx-auto rounded-full" />
+            <div className="grid grid-cols-2 gap-2">
+              <div className="h-16 bg-zinc-800 rounded" />
+              <div className="h-16 bg-zinc-800 rounded" />
+            </div>
+            <div className="h-12 bg-zinc-800 rounded" />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {/* Stage 1: Market Data */}
+            <div className="flex justify-center">
+              <div className="bg-zinc-800/80 text-[11px] px-4 py-1.5 rounded-full border border-zinc-700 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live Market Data (Binance WebSocket)
               </div>
             </div>
-          ))
-        ) : (
-          signalsList.map((sig) => {
-            const badgeColor = 
-              sig.type === "BUY" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-              sig.type === "SELL" ? "bg-rose-500/10 text-rose-500 border-rose-500/20" :
-              "bg-amber-500/10 text-amber-500 border-amber-500/20";
-              
-            return (
-              <div key={sig.id || sig.symbol} className="bg-zinc-950 rounded-lg p-3 border border-zinc-800">
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <div className="font-semibold text-zinc-100">{sig.symbol.replace("USDT", "")}</div>
-                    <div className="text-[10px] text-zinc-500">Analysis: Database Sync</div>
+            
+            <div className="flex justify-center text-zinc-700 text-xs py-1">↓</div>
+
+            {/* Stage 2: Core Agents */}
+            <div className="grid grid-cols-2 gap-2">
+              {signalsList.map((sig) => {
+                const badgeColor = 
+                  sig.type === "BUY" ? "text-emerald-400" :
+                  sig.type === "SELL" ? "text-rose-400" :
+                  "text-amber-400";
+                  
+                return (
+                  <div key={sig.agentId} className="bg-zinc-950/50 rounded p-2 border border-zinc-800/80 text-center flex flex-col justify-center">
+                    <div className="text-[10px] text-zinc-500 mb-1 capitalize">
+                      {sig.agentId.replace("-", " ")}
+                    </div>
+                    <div className={`text-xs font-bold ${badgeColor}`}>
+                      {sig.type} <span className="text-zinc-600 font-normal">|</span> {sig.confidence}%
+                    </div>
                   </div>
-                  <div className={`px-2 py-0.5 rounded text-xs font-bold border ${badgeColor}`}>
-                    {sig.type} • {sig.confidence}%
-                  </div>
-                </div>
-                
-                <p className="text-xs text-zinc-400 leading-relaxed mb-3">
-                  {sig.reason}
-                </p>
-                
-                <div className="flex gap-3 text-[10px] text-zinc-500 font-mono">
-                  <div className="flex flex-col">
-                    <span>Risk Score</span>
-                    <span className="text-zinc-300">{sig.riskScore}</span>
-                  </div>
-                </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-center text-zinc-700 text-xs py-1">↓</div>
+
+            {/* Stage 3: Consensus Coordinator */}
+            <div className="bg-blue-900/10 border border-blue-900/30 rounded p-3 text-center">
+              <div className="text-[10px] text-blue-400/80 mb-1 uppercase tracking-wider font-semibold">Consensus Coordinator</div>
+              <div className={`font-bold text-sm ${derivedConsensusAction === "BUY" ? "text-emerald-400" : derivedConsensusAction === "SELL" ? "text-rose-400" : "text-amber-400"}`}>
+                {derivedConsensusAction} • {consensusConfidence}% Conf
               </div>
-            );
-          })
+              <p className="text-[10px] text-zinc-400 mt-2 leading-relaxed">
+                {consensusAction || "Analyzing sub-agent signals..."}
+              </p>
+            </div>
+
+            <div className="flex justify-center text-zinc-700 text-xs py-1">↓</div>
+
+            {/* Stage 4: Execution Agent */}
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded p-3 text-center">
+              <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wider font-semibold">Execution Agent</div>
+              <div className="text-[11px] text-zinc-300">
+                {derivedConsensusAction !== "HOLD" 
+                  ? "Order prepared, sized, and routed to Trading Engine." 
+                  : "Standing by. Maintaining current exposure limits."}
+              </div>
+            </div>
+
+            <div className="flex justify-center text-zinc-700 text-xs py-1">↓</div>
+
+            {/* Stage 5: Portfolio Update */}
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded p-2 text-center">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Portfolio Updated</div>
+            </div>
+
+            <div className="flex justify-center text-zinc-700 text-xs py-1">↓</div>
+
+            {/* Stage 6: Agent Memory */}
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded p-2 text-center">
+              <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Agent Memory Logged</div>
+            </div>
+          </div>
         )}
       </div>
     </div>

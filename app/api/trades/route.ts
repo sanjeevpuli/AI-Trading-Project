@@ -49,17 +49,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET – return user's trades from DB, or fallback to mock
+// GET – return user's trades from DB, or fallback to default
 export async function GET(request: NextRequest) {
   const user = getSessionUser(request);
   
-  const mockTradesState = {
+  const defaultTradesState = {
     activePositions: [],
     executionHistory: [],
   };
 
   if (!user) {
-    return NextResponse.json(mockTradesState, {
+    return NextResponse.json(defaultTradesState, {
       headers: {
         "Cache-Control": "no-store, max-age=0",
       },
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     console.error("GET /api/trades DB error, returning empty list:", error);
   }
 
-  return NextResponse.json(mockTradesState, {
+  return NextResponse.json(defaultTradesState, {
     headers: {
       "Cache-Control": "no-store, max-age=0",
     },

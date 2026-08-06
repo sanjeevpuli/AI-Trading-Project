@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // Simple mock consensus logic based on recent signals
+      // Baseline consensus based on the most recent signals
       const latest = recentSignals[0];
       consensusType = latest.type;
       consensusConfidence = latest.confidence;

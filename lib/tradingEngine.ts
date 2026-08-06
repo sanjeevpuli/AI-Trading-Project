@@ -93,60 +93,7 @@ export function checkStopLossTakeProfit(
 /**
  * Seed historical closed trades if none exist.
  */
-export const SEED_CLOSED_TRADES: ClosedTrade[] = [
-  {
-    id: "TRD-MOCK-1",
-    symbol: "BTCUSDT",
-    type: "LONG",
-    entryPrice: 67120.5,
-    exitPrice: 68420.0,
-    amount: 0.5,
-    pnl: 649.75,
-    pnlPercentage: 1.93,
-    entryTime: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Yesterday
-    exitTime: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
-    exitReason: "TAKE_PROFIT",
-  },
-  {
-    id: "TRD-MOCK-2",
-    symbol: "ETHUSDT",
-    type: "SHORT",
-    entryPrice: 3895.2,
-    exitPrice: 3820.4,
-    amount: 2.0,
-    pnl: 149.6,
-    pnlPercentage: 1.92,
-    entryTime: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), // 12h ago
-    exitTime: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
-    exitReason: "MANUAL",
-  },
-  {
-    id: "TRD-MOCK-3",
-    symbol: "SOLUSDT",
-    type: "LONG",
-    entryPrice: 165.4,
-    exitPrice: 161.2,
-    amount: 15.0,
-    pnl: -63.0,
-    pnlPercentage: -2.54,
-    entryTime: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), // 6h ago
-    exitTime: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    exitReason: "STOP_LOSS",
-  },
-  {
-    id: "TRD-MOCK-4",
-    symbol: "BNBUSDT",
-    type: "LONG",
-    entryPrice: 590.25,
-    exitPrice: 605.5,
-    amount: 4.0,
-    pnl: 61.0,
-    pnlPercentage: 2.58,
-    entryTime: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    exitTime: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    exitReason: "MANUAL",
-  },
-];
+export const SEED_CLOSED_TRADES: ClosedTrade[] = [];
 
 /**
  * Calculates win rate percentage.

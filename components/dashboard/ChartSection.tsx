@@ -23,8 +23,8 @@ const TIMEFRAMES = [
   { label: "1W",  interval: "W" },
 ];
 
-function initWidget(interval: string, symbol: string) {
-  new window.TradingView.widget({
+function initWidget(interval: string, symbol: string, savedData?: object) {
+  return new window.TradingView.widget({
     autosize:          true,
     symbol:            `BINANCE:${symbol}`,
     interval,
@@ -42,28 +42,52 @@ function initWidget(interval: string, symbol: string) {
     withdateranges:    true,
     allow_symbol_change: false,
     container_id:      CONTAINER_ID,
+    saved_data:        savedData,
   });
 }
 
 export default function ChartSection() {
   const selectedAsset = useTradingStore((s) => s.selectedAsset);
   const portfolioMetrics = useTradingStore((s) => s.portfolioMetrics);
-  const [activeInterval, setActiveInterval] = useState("60");
+  const activeInterval = useTradingStore((s) => s.chartTimeframe);
+  const setActiveInterval = useTradingStore((s) => s.setChartTimeframe);
+  const chartPreferences = useTradingStore((s) => s.chartPreferences);
+  const setChartPreferences = useTradingStore((s) => s.setChartPreferences);
+  
   // Track whether the <script> tag is already in the DOM
   const scriptRef = useRef<HTMLScriptElement | null>(null);
+  const widgetRef = useRef<any>(null);
 
   useEffect(() => {
     // Clear any previously injected widget iframe
     const container = document.getElementById(CONTAINER_ID);
     if (container) container.innerHTML = "";
 
-    const boot = () => initWidget(activeInterval, selectedAsset);
+    let saveInterval: NodeJS.Timeout;
+
+    const boot = () => {
+      widgetRef.current = initWidget(activeInterval, selectedAsset, chartPreferences || undefined);
+      
+      if (widgetRef.current && widgetRef.current.onChartReady) {
+        widgetRef.current.onChartReady(() => {
+          // The free tv.js widget does not emit 'onAutoSaveNeeded'.
+          // We must poll periodically so changes survive a hard page refresh.
+          saveInterval = setInterval(() => {
+            if (widgetRef.current && widgetRef.current.save) {
+              widgetRef.current.save((state: object) => {
+                if (state) {
+                  setChartPreferences(state as Record<string, unknown>);
+                }
+              });
+            }
+          }, 3000);
+        });
+      }
+    };
 
     if (typeof window !== "undefined" && window.TradingView) {
-      // Library already loaded (e.g. interval change) — just re-init
       boot();
     } else if (!document.getElementById("tv-script")) {
-      // First load — inject the script once
       const script = document.createElement("script");
       script.id  = "tv-script";
       script.src = "https://s3.tradingview.com/tv.js";
@@ -72,17 +96,21 @@ export default function ChartSection() {
       document.head.appendChild(script);
       scriptRef.current = script;
     } else {
-      // Script tag exists but not yet evaluated — wait for it
       const existing = document.getElementById("tv-script") as HTMLScriptElement;
       existing.addEventListener("load", boot);
     }
 
     return () => {
-      // Clear widget on cleanup so the next render starts fresh
+      if (saveInterval) clearInterval(saveInterval);
+      if (widgetRef.current && widgetRef.current.save) {
+        widgetRef.current.save((state: object) => {
+          if (state) setChartPreferences(state as Record<string, unknown>);
+        });
+      }
       const c = document.getElementById(CONTAINER_ID);
       if (c) c.innerHTML = "";
     };
-  }, [activeInterval, selectedAsset]);
+  }, [activeInterval, selectedAsset]); // Intentionally omitting chartPreferences to avoid infinite loops
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col h-[520px]">

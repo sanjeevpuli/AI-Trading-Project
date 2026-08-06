@@ -46,6 +46,8 @@ model User {
   orders              Order[]
   watchlist           Watchlist?
   passwordResetTokens PasswordResetToken[]
+  settings            UserSettings?
+  notifications       Notification[]
 }
 
 model Portfolio {
@@ -168,6 +170,36 @@ model PasswordResetToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserSettings {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  theme                 String   @default("dark")
+  defaultSymbol         String   @default("BTCUSDT")
+  defaultTimeframe      String   @default("60")
+  riskPreferences       String   @default("moderate") // conservative, moderate, aggressive
+  tradingPreferences    String   @default("manual") // manual, automated, semi-automated
+  language              String   @default("en")
+  timezone              String   @default("UTC")
+  notificationPreferences Json     @default("{\"tradeExecuted\":true,\"positionClosed\":true,\"stopLossHit\":true,\"takeProfitHit\":true,\"aiConsensus\":false,\"riskAlerts\":true,\"portfolioAlerts\":true,\"systemNotifications\":true}")
+  aiPreferences         Json     @default("{\"agentAutonomy\":\"low\",\"riskTolerance\":\"medium\"}")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   // e.g., TRADE_EXECUTED, POSITION_CLOSED, STOP_LOSS, TAKE_PROFIT, AI_CONSENSUS, RISK_ALERT, SYSTEM
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

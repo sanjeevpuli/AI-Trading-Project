@@ -172,8 +172,8 @@ export default function TradingPanel() {
 
   return (
     <>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 flex flex-col h-full justify-between">
-        <div>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-5 flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto pr-2 pb-4 -mr-2">
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
             <h2 className="text-zinc-100 font-semibold text-sm">New Paper Order</h2>
@@ -405,7 +405,7 @@ export default function TradingPanel() {
                 : "bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-950/20"
             }`}
           >
-            {orderType === "LONG" ? "Open LONG Contract" : "Open SHORT Contract"}
+            {orderType === "LONG" ? "Preview LONG Order" : "Preview SHORT Order"}
           </button>
         </div>
       </div>
@@ -477,7 +477,7 @@ export default function TradingPanel() {
                     : "bg-rose-600 hover:bg-rose-500"
                 }`}
               >
-                Confirm
+                Execute Order
               </button>
             </div>
           </div>

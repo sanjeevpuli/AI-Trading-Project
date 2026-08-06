@@ -82,11 +82,11 @@ export default function ProfilePage() {
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Account Type</p>
-                <p className="text-sm font-medium text-zinc-300 mt-0.5">Mock Paper Trading Account</p>
+                <p className="text-sm font-medium text-zinc-300 mt-0.5">Live Production Account</p>
               </div>
               <div>
                 <p className="text-xs text-zinc-500">Date Joined</p>
-                <p className="text-sm font-medium text-zinc-300 mt-0.5">June 2026</p>
+                <p className="text-sm font-medium text-zinc-300 mt-0.5">Aug 2026</p>
               </div>
             </div>
           </div>

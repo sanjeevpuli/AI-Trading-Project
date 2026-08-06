@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { Position, Trade, Order, AgentSignal, AgentDiagnostic, PortfolioStats, Portfolio } from "../types/trading";
 import { executeSimulatedOrder, closeSimulatedPosition } from "../services/tradingEngine";
 import { syncPortfolio, syncTrade, syncPosition, deletePosition, syncOrder, deleteOrder, syncSignals } from "../services/dbSync";
@@ -6,12 +7,19 @@ import { calculatePortfolioStats } from "../services/portfolioService";
 import { validateOrderExecution, checkMarginLiquidation } from "../services/riskManager";
 import { evaluatePendingOrders } from "../services/tradingEngine";
 import { coordinateAgentConsensus } from "../services/agentCoordinator";
+import { evaluateExecution } from "../services/ai/execution";
+import { agentMemory } from "../services/ai/agentMemory";
 import { SocketStatus, binanceWebsocketService } from "../services/binanceService";
 
 interface TradingStore {
   selectedAsset: string;
   setSelectedAsset: (symbol: string) => void;
   
+  chartTimeframe: string;
+  setChartTimeframe: (tf: string) => void;
+  chartPreferences: Record<string, unknown> | null;
+  setChartPreferences: (prefs: Record<string, unknown>) => void;
+
   // Real-time market prices streamed from socket
   prices: Record<string, number>;
   priceChanges: Record<string, number>;
@@ -31,6 +39,7 @@ interface TradingStore {
   latestConsensusConfidence: number;
 
   watchlistSymbols: string[];
+  setWatchlistSymbols: (symbols: string[]) => void;
   portfolioMetrics: { timestamp: string; totalValue: number; cash: number; realizedPnL: number; unrealizedPnL: number; drawDown: number }[];
   isDashboardLoading: boolean;
   dashboardError: string | null;
@@ -41,7 +50,11 @@ interface TradingStore {
   fetchDashboardData: () => Promise<void>;
   fetchMarketData: (symbols: string[]) => Promise<void>;
   updatePrice: (symbol: string, price: number, changePercent: number) => void;
-  updateKlineClose: (symbol: string, closePrice: number, historyPrices: number[]) => void;
+  // AI and Data History
+  historicalKlines: Record<string, number[]>;
+  isWarmingUp: boolean;
+  setHistoricalKlines: (symbol: string, klines: number[]) => void;
+  updateKlineClose: (symbol: string, price: number, historyPrices: number[]) => void;
   executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; orderType: "MARKET" | "LIMIT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => { success: boolean; error?: string };
   cancelOrder: (id: string) => void;
   closePosition: (id: string, reason?: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION") => void;
@@ -53,135 +66,172 @@ interface TradingStore {
 
 const INITIAL_BALANCE = 100000;
 
-export const useTradingStore = create<TradingStore>((set, get) => {
-  // Client-side hydration helper
-  const isClient = typeof window !== "undefined";
-  const savedBalance = isClient ? localStorage.getItem("quant_balance_z") : null;
-  const savedPositions = isClient ? localStorage.getItem("quant_positions_z") : null;
-  const savedOrders = isClient ? localStorage.getItem("quant_orders_z") : null;
-  const savedHistory = isClient ? localStorage.getItem("quant_history_z") : null;
+export const useTradingStore = create<TradingStore>()(
+  persist(
+    (set, get) => {
+      // Client-side hydration helper
+      const isClient = typeof window !== "undefined";
+      const savedBalance = isClient ? localStorage.getItem("quant_balance_z") : null;
+      const savedPositions = isClient ? localStorage.getItem("quant_positions_z") : null;
+      const savedOrders = isClient ? localStorage.getItem("quant_orders_z") : null;
+      const savedHistory = isClient ? localStorage.getItem("quant_history_z") : null;
 
-  const initialBalance = savedBalance ? parseFloat(savedBalance) : INITIAL_BALANCE;
-  const initialPositions = savedPositions ? JSON.parse(savedPositions) : [];
-  const initialOrders = savedOrders ? JSON.parse(savedOrders) : [];
-  const initialHistory = savedHistory ? JSON.parse(savedHistory) : [];
+      const initialBalance = savedBalance ? parseFloat(savedBalance) : INITIAL_BALANCE;
+      const initialPositions = savedPositions ? JSON.parse(savedPositions) : [];
+      const initialOrders = savedOrders ? JSON.parse(savedOrders) : [];
+      const initialHistory = savedHistory ? JSON.parse(savedHistory) : [];
+
+      // Pre-seed agent diagnostic states matching the beautiful UI
+      const initialDiagnostics: AgentDiagnostic[] = [
+        {
+          id: "market-analysis",
+          name: "Market Analysis Agent",
+          role: "Fundamental & Macro scanning",
+          icon: "📊",
+          status: "ANALYZING",
+          confidence: 84,
+          health: "HEALTHY",
+          latency: "18ms",
+          uptime: "99.98%",
+          activity: [
+            "Parsed FED transcripts: hawkish tone expected.",
+            "Scanning volume profiles for BTC block zones.",
+          ],
+        },
+        {
+          id: "technical-analysis",
+          name: "Technical Analysis Agent",
+          role: "Indicator & Candlestick analytics",
+          icon: "📈",
+          status: "EXECUTING",
+          confidence: 91,
+          health: "HEALTHY",
+          latency: "8ms",
+          uptime: "100.0%",
+          activity: [
+            "Computing EMA crossover configurations.",
+            "Scanned MACD trend vectors on BTC 1m kline stream.",
+          ],
+        },
+        {
+          id: "sentiment-analysis",
+          name: "Sentiment Analysis Agent",
+          role: "News feeds & Social media parsing",
+          icon: "💬",
+          status: "ACTIVE",
+          confidence: 76,
+          health: "HEALTHY",
+          latency: "35ms",
+          uptime: "99.92%",
+          activity: [
+            "Compiled news articles: crypto ETF flows positive.",
+            "Fear & Greed Index parsed: 64 (Greed).",
+          ],
+        },
+        {
+          id: "risk-management",
+          name: "Risk Management Agent",
+          role: "Stop loss & Capital allocation constraints",
+          icon: "🛡️",
+          status: "ACTIVE",
+          confidence: 98,
+          health: "HEALTHY",
+          latency: "5ms",
+          uptime: "100.0%",
+          activity: [
+            "Margin allocations checked. Net leverage nominal.",
+            "Maximum loss buffers established.",
+          ],
+        },
+        {
+          id: "portfolio-allocation",
+          name: "Portfolio Allocation Agent",
+          role: "Weight distribution optimizer",
+          icon: "💼",
+          status: "ACTIVE",
+          confidence: 88,
+          health: "HEALTHY",
+          latency: "22ms",
+          uptime: "99.95%",
+          activity: [
+            "Simulating mean-variance rebalancing loops.",
+            "Optimal Cash buffer calculated: 55.0%.",
+          ],
+        },
+        {
+          id: "consensus-coordinator",
+          name: "Consensus Coordinator",
+          role: "Multi-agent decision aggregation",
+          icon: "🧠",
+          status: "ACTIVE",
+          confidence: 100,
+          health: "HEALTHY",
+          latency: "2ms",
+          uptime: "100.0%",
+          activity: [
+            "Awaiting sub-agent evaluations.",
+            "Consensus engine initialized.",
+          ],
+        },
+        {
+          id: "execution-agent",
+          name: "Execution Agent",
+          role: "Order sizing & routing",
+          icon: "⚡",
+          status: "ACTIVE",
+          confidence: 100,
+          health: "HEALTHY",
+          latency: "1ms",
+          uptime: "100.0%",
+          activity: [
+            "Standing by for execution directives.",
+            "Order routing systems online.",
+          ],
+        },
+      ];
+
+      return {
+        selectedAsset: "BTCUSDT",
+        chartTimeframe: "60",
+        prices: {},
+        priceChanges: {},
+        socketStatus: "DISCONNECTED",
+        balance: initialBalance,
+        positions: initialPositions,
+        pendingOrders: initialOrders,
+        history: initialHistory,
+        agentDiagnostics: initialDiagnostics,
+        agentSignals: {},
+        latestConsensusReasoning: "Awaiting candle closing indicators to form weighted consensus trade actions.",
+        latestConsensusConfidence: 50,
+        watchlistSymbols: [],
+        portfolioMetrics: [],
+        isDashboardLoading: true,
+        dashboardError: null,
+        isMarketLoading: true,
+        marketError: null,
+
+        fetchDashboardData: async () => {
+          set({ isDashboardLoading: true, dashboardError: null });
+          try {
+            const [dashRes, sigRes, agentsRes, ordersRes] = await Promise.all([
+              fetch("/api/dashboard"),
+              fetch("/api/signals"),
+              fetch("/api/agents"),
+              fetch("/api/orders")
+            ]);
+
+            let dashData: any = {};
+            if (dashRes.ok) {
+              dashData = await dashRes.json();
+            } else {
+              console.warn("Dashboard API failed.");
+            }
 
 
-  // Pre-seed agent diagnostic states matching the beautiful UI
-  const initialDiagnostics: AgentDiagnostic[] = [
-    {
-      id: "market-analysis",
-      name: "Market Analysis Agent",
-      role: "Fundamental & Macro scanning",
-      icon: "📊",
-      status: "ANALYZING",
-      confidence: 84,
-      health: "HEALTHY",
-      latency: "18ms",
-      uptime: "99.98%",
-      activity: [
-        "Parsed FED transcripts: hawkish tone expected.",
-        "Scanning volume profiles for BTC block zones.",
-      ],
-    },
-    {
-      id: "technical-analysis",
-      name: "Technical Analysis Agent",
-      role: "Indicator & Candlestick analytics",
-      icon: "📈",
-      status: "EXECUTING",
-      confidence: 91,
-      health: "HEALTHY",
-      latency: "8ms",
-      uptime: "100.0%",
-      activity: [
-        "Computing EMA crossover configurations.",
-        "Scanned MACD trend vectors on BTC 1m kline stream.",
-      ],
-    },
-    {
-      id: "sentiment-analysis",
-      name: "Sentiment Analysis Agent",
-      role: "News feeds & Social media parsing",
-      icon: "💬",
-      status: "ACTIVE",
-      confidence: 76,
-      health: "HEALTHY",
-      latency: "35ms",
-      uptime: "99.92%",
-      activity: [
-        "Compiled news articles: crypto ETF flows positive.",
-        "Fear & Greed Index parsed: 64 (Greed).",
-      ],
-    },
-    {
-      id: "risk-management",
-      name: "Risk Management Agent",
-      role: "Stop loss & Capital allocation constraints",
-      icon: "🛡️",
-      status: "ACTIVE",
-      confidence: 98,
-      health: "HEALTHY",
-      latency: "5ms",
-      uptime: "100.0%",
-      activity: [
-        "Margin allocations checked. Net leverage nominal.",
-        "Maximum loss buffers established.",
-      ],
-    },
-    {
-      id: "portfolio-allocation",
-      name: "Portfolio Allocation Agent",
-      role: "Weight distribution optimizer",
-      icon: "💼",
-      status: "ACTIVE",
-      confidence: 88,
-      health: "HEALTHY",
-      latency: "22ms",
-      uptime: "99.95%",
-      activity: [
-        "Simulating mean-variance rebalancing loops.",
-        "Optimal Cash buffer calculated: 55.0%.",
-      ],
-    },
-  ];
-
-  return {
-    selectedAsset: "BTCUSDT",
-    prices: { BTCUSDT: 68210.0, ETHUSDT: 3850.5, SOLUSDT: 164.2 }, // Mocked fallbacks for UI
-    priceChanges: { BTCUSDT: 0.8, ETHUSDT: 1.5, SOLUSDT: -1.2 }, // Mocked fallbacks for UI
-    socketStatus: "DISCONNECTED",
-    balance: initialBalance,
-    positions: initialPositions,
-    pendingOrders: initialOrders,
-    history: initialHistory,
-    agentDiagnostics: initialDiagnostics,
-    agentSignals: {},
-    latestConsensusReasoning: "Awaiting candle closing indicators to form weighted consensus trade actions.",
-    latestConsensusConfidence: 50,
-    watchlistSymbols: [],
-    portfolioMetrics: [],
-    isDashboardLoading: true,
-    dashboardError: null,
-    isMarketLoading: true,
-    marketError: null,
-
-    fetchDashboardData: async () => {
-      set({ isDashboardLoading: true, dashboardError: null });
-      try {
-        const [dashRes, sigRes, agentsRes, ordersRes] = await Promise.all([
-          fetch("/api/dashboard"),
-          fetch("/api/signals"),
-          fetch("/api/agents"),
-          fetch("/api/orders")
-        ]);
-
-        if (!dashRes.ok) throw new Error("Failed to load dashboard data");
-        
-        const dashData = await dashRes.json();
-        const sigData = await sigRes.json();
-        const agentsData = await agentsRes.json();
-        const ordersData = ordersRes.ok ? await ordersRes.json() : [];
+            const sigData = sigRes.ok ? await sigRes.json() : { signals: [] };
+            const agentsData = agentsRes.ok ? await agentsRes.json() : { agents: [] };
+            const ordersData = ordersRes.ok ? await ordersRes.json() : [];
 
         // Check if there is portfolio data, otherwise fallback to local initial state
         const nextBalance = dashData.portfolio?.balance ?? initialBalance;
@@ -403,6 +453,7 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           const { closedTrade, cashReturn } = closeSimulatedPosition(pos, currentMarkPrice, "LIQUIDATION");
           nextBalance += cashReturn;
           nextHistory = [closedTrade, ...nextHistory];
+          agentMemory.recordTrade(closedTrade);
         });
         finalPositions = [];
         console.warn(liquidationCheck.message);
@@ -430,24 +481,52 @@ export const useTradingStore = create<TradingStore>((set, get) => {
     // Technical Candle stream close updater
     updateKlineClose: (symbol, closePrice, historyPrices) => {
       const state = get();
+      
+      // Combine warmup historical klines with live websocket klines
+      let combinedHistory = state.historicalKlines[symbol] || [];
+      if (historyPrices && historyPrices.length > 0) {
+        // Since historyPrices might just be recent websocket data, we append the latest closePrice
+        // or just use historyPrices directly if it contains the full history.
+        // Actually, binanceService.ts builds up `historyPrices` starting from the first websocket message.
+        // So we can just concatenate them.
+        combinedHistory = [...combinedHistory, ...historyPrices];
+      } else {
+        combinedHistory = [...combinedHistory, closePrice];
+      }
+
+      // Keep last 100 candles max
+      if (combinedHistory.length > 100) {
+        combinedHistory = combinedHistory.slice(combinedHistory.length - 100);
+      }
+
       // Run AI consensus engine on candle close!
       const stats = calculatePortfolioStats(state.balance, state.positions, state.history, state.portfolioMetrics);
       const decision = coordinateAgentConsensus(
         symbol,
-        historyPrices,
+        combinedHistory,
         stats.maxDrawdown,
         stats.exposure
       );
 
       // Update diagnostic action scrolling streams in the dashboard
       const nextDiagnostics = state.agentDiagnostics.map((agent) => {
+        if (agent.id === "consensus-coordinator") {
+          const newThought = `[Consensus: ${decision.action}] Conf: ${decision.confidence}%. ${decision.reasoning}`;
+          return {
+            ...agent,
+            confidence: decision.confidence,
+            status: decision.action !== "HOLD" ? "EXECUTING" : "ACTIVE",
+            activity: [newThought, ...agent.activity.filter(t => t !== newThought)].slice(0, 3)
+          };
+        }
+
         const signal = decision.agentSignals[agent.id];
         if (!signal) return agent;
 
         // Append new thought based on consensus
         const currentThoughts = agent.activity;
         const newThought = `[Auto Signal: ${signal.type}] ${signal.reason}`;
-        const updatedThoughts = [newThought, ...currentThoughts.filter((t) => t !== newThought).slice(0, 2)];
+        const updatedThoughts = [newThought, ...currentThoughts.filter((t) => t !== newThought).slice(0, 3)];
 
         return {
           ...agent,
@@ -457,52 +536,35 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         };
       });
 
-      // Optional Auto execution of Agent signals (if we want the platform to simulate active trading bots!
-      // That is an absolute WOW factor. If the Technical consensus BUY is generated, we can open a perp position automatically!
-      // Let's implement an automated paper trading executor for AI signals!
-      // This will let the user sit back and watch their bots trade live! Extremely premium.
-      let nextBalance = state.balance;
-      let nextPositions = [...state.positions];
+      // 7. Execution Agent (Order Sizing and Execution)
+      const hasExistingPosition = state.positions.some((p) => p.symbol === symbol);
+      const executionDecision = evaluateExecution(
+        symbol,
+        closePrice,
+        state.balance,
+        hasExistingPosition,
+        decision
+      );
 
-      const alreadyHasAsset = state.positions.some((p) => p.symbol === symbol);
+      // Record to Agent Memory
+      agentMemory.addDecision(decision);
 
-      if (decision.action !== "HOLD" && !alreadyHasAsset && decision.positionSizePercent > 0) {
-        const targetRiskAllocUsd = (nextBalance * decision.positionSizePercent) / 100;
-        const orderQty = targetRiskAllocUsd / closePrice;
-        
-        // Enforce bounds
-        if (orderQty > 0.0001 && nextBalance >= targetRiskAllocUsd) {
-          const riskCheck = validateOrderExecution(
-            { symbol, type: decision.action === "BUY" ? "LONG" : "SHORT", amount: orderQty, price: closePrice },
-            nextBalance,
-            nextPositions
-          );
-
-          if (riskCheck.allowed) {
-            // Open position
-            const orderResult = executeSimulatedOrder(
-              {
-                symbol,
-                type: decision.action === "BUY" ? "LONG" : "SHORT",
-                amount: orderQty,
-                price: closePrice,
-                stopLoss: decision.action === "BUY" ? closePrice * 0.96 : closePrice * 1.04,
-                takeProfit: decision.action === "BUY" ? closePrice * 1.08 : closePrice * 0.92,
-              },
-              nextBalance
-            );
-
-            if (orderResult.success && orderResult.position) {
-              nextBalance -= (orderQty * orderResult.executionPrice + orderResult.fee);
-              nextPositions = [orderResult.position, ...nextPositions];
-              
-              if (isClient) {
-                localStorage.setItem("quant_balance_z", nextBalance.toString());
-                localStorage.setItem("quant_positions_z", JSON.stringify(nextPositions));
-              }
-            }
+      if (executionDecision) {
+        // Log execution thought
+        nextDiagnostics.forEach(agent => {
+          if (agent.id === "execution-agent") {
+            agent.activity = [executionDecision.reason, ...agent.activity].slice(0, 3);
+            agent.status = "EXECUTING";
           }
+        });
+
+        // Dispatch simulated order using existing store action
+        const result = get().executeOrder(executionDecision);
+        if (!result.success && result.error) {
+           agentMemory.recordRejection(result.error, decision);
         }
+      } else if (decision.action !== "HOLD" && hasExistingPosition) {
+         agentMemory.recordRejection("Already have an open position for this asset.", decision);
       }
 
       if (isClient) {
@@ -521,8 +583,6 @@ export const useTradingStore = create<TradingStore>((set, get) => {
         agentSignals: { ...state.agentSignals, ...decision.agentSignals },
         latestConsensusReasoning: decision.reasoning,
         latestConsensusConfidence: decision.confidence,
-        balance: nextBalance,
-        positions: nextPositions,
       });
     },
 
@@ -606,13 +666,14 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           equityCurve: [] as { time: string; value: number }[],
         } as Portfolio);
         // Record the trade
-        syncTrade({
-          id: "",
+        const tradeId = crypto.randomUUID();
+        const closedTrade: Trade = {
+          id: tradeId,
           userId: "",
           symbol: order.symbol,
           type: order.type,
-          entryPrice: order.price,
-          exitPrice: order.price,
+          entryPrice: result.executionPrice,
+          exitPrice: result.executionPrice,
           amount: order.amount,
           pnl: 0,
           pnlPercentage: 0,
@@ -621,7 +682,8 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           exitReason: "MANUAL",
           fee: result.fee,
           slippage: 0,
-        } as Trade);
+        };
+        syncTrade(closedTrade);
         // Position sync
         nextPositions.forEach((p) => syncPosition(p));
       }
@@ -654,6 +716,9 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       const nextPositions = state.positions.filter((p) => p.id !== id);
       const nextHistory = [closedTrade, ...state.history];
 
+      // Record to Agent Memory for feedback loop
+      agentMemory.recordTrade(closedTrade);
+
       set({
         balance: nextBalance,
         positions: nextPositions,
@@ -683,8 +748,9 @@ export const useTradingStore = create<TradingStore>((set, get) => {
           valueAtRisk: 0,
           equityCurve: [] as { time: string; value: number }[],
         } as Portfolio);
+        const tradeId = closedTrade.id || crypto.randomUUID();
         syncTrade({
-          id: "",
+          id: tradeId,
           userId: "",
           symbol: pos?.symbol ?? "",
           type: pos?.type ?? "LONG",
@@ -723,5 +789,36 @@ export const useTradingStore = create<TradingStore>((set, get) => {
       const state = get();
       return calculatePortfolioStats(state.balance, state.positions, state.history, state.portfolioMetrics);
     },
+    
+
+
+    historicalKlines: {},
+    isWarmingUp: false,
+    
+    setChartTimeframe: (tf) => set({ chartTimeframe: tf }),
+    chartPreferences: null,
+    setChartPreferences: (prefs) => set({ chartPreferences: prefs }),
+
+    setHistoricalKlines: (symbol: string, klines: number[]) => {
+      set((state) => ({
+        historicalKlines: { ...state.historicalKlines, [symbol]: klines },
+        isWarmingUp: false,
+      }));
+    },
+
+    setWatchlistSymbols: (symbols) => set({ watchlistSymbols: symbols }),
   };
-});
+  },
+  {
+    name: "quant-store",
+    partialize: (state) => ({
+      selectedAsset: state.selectedAsset,
+      chartTimeframe: state.chartTimeframe,
+      chartPreferences: state.chartPreferences,
+      watchlistSymbols: state.watchlistSymbols,
+      // Note: we can persist balance/orders/history here too, 
+      // but they are already manually persisted so we'll leave them to avoid double storage for now.
+    }),
+  }
+)
+);

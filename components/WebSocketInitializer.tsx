@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { binanceWebsocketService } from "@/lib/services/binanceService";
+import { marketDataAgent } from "@/lib/services/ai/marketData";
 import { useTradingStore } from "@/lib/store/tradingStore";
 
 /**
  * WebSocketInitializer — Mounts once at the app root level.
- * Wires the Binance WebSocket service events to the Zustand trading store.
+ * Wires the Market Data Agent to the Zustand trading store.
  * No UI output — purely a side-effect bridge component.
  */
 export default function WebSocketInitializer() {
@@ -19,46 +19,42 @@ export default function WebSocketInitializer() {
 
   // Run once on client mount to set up WebSocket listeners.
   useEffect(() => {
-    // Subscribe to connection status changes
-    const unsubStatus = binanceWebsocketService.onStatusChange((status) => {
-      updateSocketStatus(status);
-    });
-
-    // Subscribe to live ticker price updates (fires every ~1 second per symbol)
-    const unsubTicker = binanceWebsocketService.onTickerUpdate(
-      (symbol, price, changePercent) => {
-        updatePrice(symbol, price, changePercent);
-      }
-    );
-
-    // Subscribe to 1m candle close events — triggers AI consensus engine
-    const unsubKline = binanceWebsocketService.onKlineUpdate(
-      (symbol, closePrice, isClosed, historyPrices) => {
-        if (isClosed) {
-          updateKlineClose(symbol, closePrice, historyPrices);
-        }
-      }
-    );
-
     // Cleanup on unmount
     return () => {
-      unsubStatus();
-      unsubTicker();
-      unsubKline();
-      binanceWebsocketService.disconnect();
+      marketDataAgent.shutdown();
     };
-  }, [updatePrice, updateKlineClose, updateSocketStatus]);
+  }, []);
 
   // Handle dynamic symbol subscriptions
   useEffect(() => {
     const baseSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT"];
     const allSymbols = Array.from(new Set([...baseSymbols, ...watchlistSymbols]));
     
-    // Fetch initial snapshot and connect websocket
-    fetchMarketData(allSymbols);
+    // Initialize Market Data Agent
+    marketDataAgent.initialize(allSymbols, {
+      onStatusChange: (status) => updateSocketStatus(status),
+      onTick: (symbol, price, changePercent) => updatePrice(symbol, price, changePercent),
+      onCandleClose: (symbol, closePrice, isClosed, historyPrices) => {
+        // Only trigger update for completed candles
+        if (isClosed && historyPrices && historyPrices.length > 0) {
+           updateKlineClose(symbol, closePrice, historyPrices);
+        }
+      }
+    });
+
+    // Warmup historical data for AI consensus engine for all tracked symbols
+    const warmupAsset = async (symbol: string) => {
+      try {
+        const history = await marketDataAgent.fetchHistoricalCandles(symbol);
+        useTradingStore.getState().setHistoricalKlines(symbol, history);
+      } catch (error) {
+        console.error(`Failed to fetch history for ${symbol}:`, error);
+      }
+    };
+    
+    allSymbols.forEach(symbol => warmupAsset(symbol));
   }, [watchlistSymbols, fetchMarketData]);
 
   // No visual UI – this component only registers side‑effects.
   return null;
 }
-

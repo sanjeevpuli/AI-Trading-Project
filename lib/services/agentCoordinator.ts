@@ -60,59 +60,68 @@ export function coordinateAgentConsensus(
   // 5. Portfolio Allocation Agent (Weight: 15%)
   const allocSignal = evaluateAllocation(symbol, portfolioExposure, techSignal.type);
 
-  // 6. MULTI-AGENT CONSENSUS VOTING
-  // Weights: Tech (35%), Sent (20%), Regime (15%), Risk (15%), Alloc (15%)
-  const votes = [
-    { sig: techSignal, w: 0.35 },
-    { sig: sentSignal, w: 0.20 },
-    { sig: regimeSignal, w: 0.15 },
-    { sig: riskSignal, w: 0.15 },
-    { sig: allocSignal, w: 0.15 },
-  ];
+  // 6. MULTI-AGENT CONSENSUS LOGIC
+  // - Technical Agent: Primary Direction
+  // - Risk Agent: Veto power
+  // - Market/Sentiment Agents: Confidence Modifiers
+  // - Portfolio Agent: Sizing Modifier
 
-  let consolidatedScore = 0; // Cumulative score: BUY adds weight, SELL subtracts weight
-  votes.forEach(({ sig, w }) => {
-    const direction = sig.type === "BUY" ? 1 : sig.type === "SELL" ? -1 : 0;
-    consolidatedScore += direction * w * sig.confidence;
-  });
-
-  let finalAction: "BUY" | "SELL" | "HOLD" = "HOLD";
-  let consensusReasoning = "";
-
-  if (consolidatedScore > 12) {
-    finalAction = "BUY";
-    consensusReasoning = `Consensus BUY declared. Strong correlation between Technical indicators (${techSignal.type}) and Sentiment scores (${sentSignal.type}) with moderate Risk levels.`;
-  } else if (consolidatedScore < -12) {
-    finalAction = "SELL";
-    consensusReasoning = `Consensus SELL declared. Divergent indicators match Bearish regime. Social channels confirm downward pressure.`;
-  } else {
+  let finalAction = techSignal.type;
+  let consensusReasoning = `Technical Agent suggests ${techSignal.type} (${techSignal.confidence}%).`;
+  
+  // Apply Risk Veto
+  if (riskSignal.type === "HOLD") {
     finalAction = "HOLD";
-    consensusReasoning = `Consensus HOLD. Mixed agent indicators. Regime and Risk agents advise maintaining flat exposure profile.`;
+    consensusReasoning = `Risk Agent VETOED trade. ${riskSignal.reason}`;
+  } else if (finalAction !== "HOLD") {
+    // Both Risk and Technical are aligned (or Risk is OK with the direction)
+    consensusReasoning += ` Risk Agent approved.`;
   }
 
-  // Calculate Weighted Confidence
-  const votingSigs = votes.filter(({ sig }) => sig.type === finalAction || finalAction === "HOLD");
-  const sumWeights = votingSigs.reduce((s, { w }) => s + w, 0);
-  const avgConf =
-    sumWeights > 0
-      ? votingSigs.reduce((s, { sig, w }) => s + sig.confidence * w, 0) / sumWeights
-      : 50;
+  // Calculate Base Confidence from Technical
+  let finalConfidence = techSignal.confidence;
+  
+  if (finalAction !== "HOLD") {
+    // Regime Modifier (+/- 15%)
+    if (regimeSignal.type === finalAction) {
+      finalConfidence += 15;
+      consensusReasoning += ` Regime confirms trend.`;
+    } else if (regimeSignal.type !== "HOLD") {
+      finalConfidence -= 15;
+      consensusReasoning += ` Regime diverges.`;
+    }
 
-  // Determine Position Sizing (leveraged on confidence, penalized on risk)
-  const finalRiskScore = Math.round(votes.reduce((s, { sig, w }) => s + sig.riskScore * w, 0));
+    // Sentiment Modifier (+/- 10%)
+    if (sentSignal.type === finalAction) {
+      finalConfidence += 10;
+      consensusReasoning += ` Sentiment confirms.`;
+    } else if (sentSignal.type !== "HOLD") {
+      finalConfidence -= 10;
+      consensusReasoning += ` Sentiment diverges.`;
+    }
+  }
+
+  // Bound confidence
+  finalConfidence = Math.max(0, Math.min(100, finalConfidence));
+
+  // Determine Position Sizing via Portfolio Agent + Confidence
+  const finalRiskScore = Math.max(riskSignal.riskScore, regimeSignal.riskScore);
   let positionSizePercent = 0;
 
   if (finalAction !== "HOLD") {
-    // Sizing maps 10% base capital per trade, scaled up/down by confidence & risk factors
     const baseSize = 10.0;
-    const confidenceMultiplier = avgConf / 100;
+    const confidenceMultiplier = finalConfidence / 100;
+    
+    // Portfolio Agent influence: if it recommends HOLD, it wants to reduce sizing
+    const portfolioMultiplier = allocSignal.type === finalAction ? 1.2 : allocSignal.type === "HOLD" ? 0.8 : 0.5;
+
     const riskPenalty = (6 - finalRiskScore) / 5; // Higher risk = smaller multiplier
-    positionSizePercent = Number((baseSize * confidenceMultiplier * Math.max(0.2, riskPenalty)).toFixed(1));
+    positionSizePercent = Number((baseSize * confidenceMultiplier * portfolioMultiplier * Math.max(0.2, riskPenalty)).toFixed(1));
   }
 
   return {
     action: finalAction,
-    confidence: Math.round(avgConf),
+    confidence: Math.round(finalConfidence),
     reasoning: consensusReasoning,
     riskScore: finalRiskScore,
     positionSizePercent,

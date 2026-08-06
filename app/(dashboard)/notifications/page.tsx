@@ -5,43 +5,30 @@ import { useTradingStore } from "@/lib/store/tradingStore";
 
 interface NotificationItem {
   id: string;
-  category: "trade" | "agent" | "system";
+  type: string;
   title: string;
-  description: string;
-  timestamp: string;
-  read: boolean;
-  severity: "info" | "warning" | "success" | "danger";
+  message: string;
+  createdAt: string;
+  isRead: boolean;
+  severity?: "info" | "warning" | "success" | "danger";
+}
+// Helper for severity mapping
+function getSeverity(type: string): "info" | "warning" | "success" | "danger" {
+  if (type === "TRADE_EXECUTED" || type === "TAKE_PROFIT") return "success";
+  if (type === "STOP_LOSS" || type === "RISK_ALERT") return "danger";
+  if (type === "PORTFOLIO_ALERT") return "warning";
+  return "info";
 }
 
-const SEED_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "welcome",
-    category: "system",
-    title: "Welcome to QuantAI",
-    description: "Your $100,000 virtual trading account has been initialized. Happy paper trading!",
-    timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), // 2 hours ago
-    read: false,
-    severity: "success",
-  },
-  {
-    id: "feed-connected",
-    category: "system",
-    title: "Binance Live Feed Connected",
-    description: "Real-time market feed subscription active for BTCUSDT, ETHUSDT, SOLUSDT, BNBUSDT.",
-    timestamp: new Date(Date.now() - 3600000 * 1.8).toISOString(), // 1.8 hours ago
-    read: true,
-    severity: "info",
-  },
-  {
-    id: "agent-consensus",
-    category: "agent",
-    title: "Agent Consensus Formed",
-    description: "Market Analysis and Technical Analysis agents reached a 85% LONG consensus consensus for BTCUSDT.",
-    timestamp: new Date(Date.now() - 3600000 * 0.5).toISOString(), // 30 mins ago
-    read: false,
-    severity: "info",
-  },
-];
+const getSeverityColor = (severity: "info" | "warning" | "success" | "danger" = "info") => {
+  const styles = {
+    info: "bg-blue-500/10 border-blue-500/20 text-blue-400",
+    success: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+    warning: "bg-amber-500/10 border-amber-500/20 text-amber-400",
+    danger: "bg-rose-500/10 border-rose-500/20 text-rose-400",
+  };
+  return styles[severity];
+};
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -53,75 +40,44 @@ export default function NotificationsPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
-    // Load existing notifications or seed
-    const saved = localStorage.getItem("quant_notifications");
-    let list: NotificationItem[] = [];
-    if (saved) {
-      list = JSON.parse(saved);
-    } else {
-      list = [...SEED_NOTIFICATIONS];
+    
+    async function loadNotifications() {
+      try {
+        const res = await fetch("/api/notifications");
+        if (res.ok) {
+          const data = await res.json();
+          setNotifications(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch notifications", err);
+      }
     }
+    loadNotifications();
+  }, []);
 
-    // Dynamic generation from recent trades if not already tracked
-    history.slice(-3).forEach((trade) => {
-      const id = `trade-${trade.id}`;
-      if (!list.some((n) => n.id === id)) {
-        list.unshift({
-          id,
-          category: "trade",
-          title: `Trade Closed: ${trade.symbol}`,
-          description: `Closed ${trade.type} position. Amount: ${trade.amount} units. Exit Price: $${trade.exitPrice?.toFixed(2)}. Net P&L: $${trade.pnl.toFixed(2)}`,
-          timestamp: trade.exitTime || new Date().toISOString(),
-          read: true,
-          severity: trade.pnl >= 0 ? "success" : "danger",
-        });
-      }
+  const markAsRead = async (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, isRead: true })
     });
+  };
 
-    positions.forEach((pos) => {
-      const id = `pos-open-${pos.id}`;
-      if (!list.some((n) => n.id === id)) {
-        list.unshift({
-          id,
-          category: "trade",
-          title: `Position Opened: ${pos.symbol}`,
-          description: `Opened ${pos.type} position at $${pos.entryPrice.toFixed(2)}. Size: ${pos.amount} units.`,
-          timestamp: pos.timestamp || new Date().toISOString(),
-          read: false,
-          severity: "info",
-        });
-      }
+  const markAllAsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    await fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "all", isRead: true })
     });
-
-    // Sort notifications by timestamp desc
-    list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    setNotifications(list);
-    localStorage.setItem("quant_notifications", JSON.stringify(list));
-  }, [history, positions]);
-
-  const saveAndSet = (list: NotificationItem[]) => {
-    setNotifications(list);
-    localStorage.setItem("quant_notifications", JSON.stringify(list));
   };
 
-  const markAllRead = () => {
-    const updated = notifications.map((n) => ({ ...n, read: true }));
-    saveAndSet(updated);
-  };
-
-  const clearAll = () => {
-    saveAndSet([]);
-  };
-
-  const toggleRead = (id: string) => {
-    const updated = notifications.map((n) => (n.id === id ? { ...n, read: !n.read } : n));
-    saveAndSet(updated);
-  };
-
-  const deleteNotification = (id: string) => {
-    const updated = notifications.filter((n) => n.id !== id);
-    saveAndSet(updated);
+  const deleteNotification = async (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    await fetch(`/api/notifications?id=${id}`, { method: "DELETE" });
   };
 
   if (!mounted) {
@@ -132,32 +88,25 @@ export default function NotificationsPage() {
     );
   }
 
-  const filtered = notifications.filter((n) => filter === "all" || n.category === filter);
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const filteredNotifications = notifications.filter((n) => {
+    if (filter === "all") return true;
+    if (filter === "trade") return n.type === "TRADE_EXECUTED" || n.type === "POSITION_CLOSED" || n.type === "STOP_LOSS" || n.type === "TAKE_PROFIT";
+    if (filter === "agent") return n.type === "AI_CONSENSUS";
+    if (filter === "system") return n.type === "SYSTEM";
+    return true;
+  });
 
   const categoryLabels = {
+    all: "All Logs",
     trade: "Trades",
     agent: "AI Agents",
     system: "System",
   };
 
-  const severityStyles = {
-    info: "bg-blue-500/10 border-blue-500/20 text-blue-400",
-    success: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
-    warning: "bg-amber-500/10 border-amber-500/20 text-amber-400",
-    danger: "bg-rose-500/10 border-rose-500/20 text-rose-400",
-  };
-
-  const severityBadges = {
-    info: "◆",
-    success: "✓",
-    warning: "⚠️",
-    danger: "❌",
-  };
-
   return (
     <div className="max-w-4xl mx-auto flex flex-col gap-6">
-      {/* Title & Actions */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">
@@ -177,26 +126,24 @@ export default function NotificationsPage() {
           {notifications.length > 0 && (
             <>
               <button
-                onClick={markAllRead}
+                onClick={markAllAsRead}
                 className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium text-zinc-300 transition"
               >
                 Mark all read
-              </button>
-              <button
-                onClick={clearAll}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-xs font-medium text-rose-400 hover:text-rose-300 transition"
-              >
-                Clear all
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* Filter Tabs */}
       <div className="flex border-b border-zinc-800">
         {(["all", "trade", "agent", "system"] as const).map((tab) => {
-          const count = tab === "all" ? notifications.length : notifications.filter((n) => n.category === tab).length;
+          const count = tab === "all" ? notifications.length : notifications.filter((n) => {
+            if (tab === "trade") return n.type === "TRADE_EXECUTED" || n.type === "POSITION_CLOSED" || n.type === "STOP_LOSS" || n.type === "TAKE_PROFIT";
+            if (tab === "agent") return n.type === "AI_CONSENSUS";
+            if (tab === "system") return n.type === "SYSTEM";
+            return false;
+          }).length;
           return (
             <button
               key={tab}
@@ -207,76 +154,68 @@ export default function NotificationsPage() {
                   : "border-transparent text-zinc-400 hover:text-zinc-200"
               }`}
             >
-              {tab === "all" ? "All Logs" : categoryLabels[tab]} ({count})
+              {categoryLabels[tab]} ({count})
             </button>
           );
         })}
       </div>
 
-      {/* Notification List */}
       <div className="flex flex-col gap-3">
-        {filtered.length === 0 ? (
+        {filteredNotifications.length === 0 ? (
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-12 text-center text-zinc-500">
             <span className="text-3xl block mb-2">🔔</span>
             <p className="text-sm font-medium">No notifications found</p>
-            <p className="text-xs text-zinc-600 mt-1">Everything is running smoothly.</p>
           </div>
         ) : (
-          filtered.map((item) => (
+          filteredNotifications.map((notif) => (
             <div
-              key={item.id}
-              className={`p-4 border rounded-xl flex items-start gap-4 transition-all relative ${
-                item.read ? "bg-zinc-900/40 border-zinc-800/80" : "bg-zinc-900 border-zinc-700/60 shadow-lg"
+              key={notif.id}
+              className={`p-4 border rounded-xl flex items-start gap-4 transition-all ${
+                notif.isRead ? "bg-zinc-900/40 border-zinc-800/80" : "bg-zinc-900 border-zinc-700/60"
               }`}
             >
-              {/* Unread indicator */}
-              {!item.read && (
-                <div className="absolute top-4 left-4 h-2.5 w-2.5 rounded-full bg-blue-500" />
-              )}
-
-              {/* Status Indicator Icon */}
               <div
-                className={`h-8 w-8 rounded-full border flex items-center justify-center shrink-0 font-bold ${
-                  severityStyles[item.severity]
-                } ${!item.read ? "" : "opacity-60"}`}
-              >
-                {severityBadges[item.severity]}
-              </div>
-
-              {/* Text Context */}
-              <div className="flex-1 min-w-0 pr-8">
-                <div className="flex items-center gap-2">
-                  <h3 className={`text-sm font-semibold truncate ${item.read ? "text-zinc-300" : "text-zinc-100"}`}>
-                    {item.title}
-                  </h3>
-                  <span className="text-[10px] text-zinc-500 shrink-0 font-mono">
-                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                className={`w-2 h-2 rounded-full mt-2 shrink-0 ${
+                  !notif.isRead ? "bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]" : "bg-transparent"
+                }`}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className={`text-sm font-medium ${!notif.isRead ? "text-zinc-100" : "text-zinc-300"}`}>
+                      {notif.title}
+                    </p>
+                    <p className={`text-xs ${!notif.isRead ? "text-zinc-400" : "text-zinc-500"}`}>
+                      {notif.message}
+                    </p>
+                  </div>
+                  <span className="text-[10px] text-zinc-500 whitespace-nowrap pt-0.5">
+                    {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
-                <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{item.description}</p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">
-                    {categoryLabels[item.category]}
+                <div className="mt-3 flex items-center gap-3">
+                  <span
+                    className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${getSeverityColor(
+                      getSeverity(notif.type)
+                    )}`}
+                  >
+                    {notif.type.replace('_', ' ')}
                   </span>
+                  {!notif.isRead && (
+                    <button
+                      onClick={() => markAsRead(notif.id)}
+                      className="text-[10px] text-cyan-500 hover:text-cyan-400 font-medium transition-colors ml-auto"
+                    >
+                      Mark as read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => deleteNotification(notif.id)}
+                    className="text-[10px] text-zinc-500 hover:text-rose-400 transition-colors"
+                  >
+                    Delete
+                  </button>
                 </div>
-              </div>
-
-              {/* Individual Actions */}
-              <div className="absolute right-4 top-4 flex gap-1">
-                <button
-                  onClick={() => toggleRead(item.id)}
-                  title={item.read ? "Mark as unread" : "Mark as read"}
-                  className="text-zinc-500 hover:text-zinc-300 p-1 text-xs transition-colors cursor-pointer"
-                >
-                  {item.read ? "⚪" : "⚫"}
-                </button>
-                <button
-                  onClick={() => deleteNotification(item.id)}
-                  title="Delete notification"
-                  className="text-zinc-500 hover:text-rose-400 p-1 text-xs transition-colors cursor-pointer"
-                >
-                  ✕
-                </button>
               </div>
             </div>
           ))
