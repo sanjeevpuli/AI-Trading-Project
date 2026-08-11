@@ -1,0 +1,49 @@
+name: ai_trading_flutter
+description: AI Trading Platform - Production Mobile Application
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP & Networking
+  dio: ^5.7.0
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^14.2.7
+
+  # Charts
+  fl_chart: ^0.69.0
+
+  # WebSocket (for backend-proxied live prices)
+  web_socket_channel: ^3.0.1
+
+  # Utilities
+  intl: ^0.19.0
+  shimmer: ^3.0.0
+  flutter_svg: ^2.0.10+1
+  shared_preferences: ^2.3.3
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  riverpod_generator: ^2.4.3
+  custom_lint: 0.7.6
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/

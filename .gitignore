@@ -39,3 +39,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/android/.gradle/
+mobile/android/.kotlin/
+mobile/android/local.properties
+mobile/.idea/
+mobile/*.iml
+mobile/android/*.iml
+
+# Flutter / Android generated files
+mobile/android/app/.cxx/
+mobile/android/app/build/
+mobile/android/captures/
