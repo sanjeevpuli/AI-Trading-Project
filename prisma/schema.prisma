@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
@@ -87,6 +88,8 @@ model Trade {
   slippage      Float        @default(0.0)
   createdAt     DateTime     @default(now())
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, exitTime(sort: Desc)])
 }
 
 model Position {
@@ -130,6 +133,8 @@ model AgentSignal {
   reason     String
   riskScore  Float
   timestamp  DateTime @default(now())
+
+  @@index([timestamp(sort: Desc)])
 }
 
 model PortfolioMetrics {
@@ -142,6 +147,8 @@ model PortfolioMetrics {
   unrealizedPnL Float
   drawDown      Float
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp(sort: Asc)])
 }
 
 model Watchlist {
@@ -161,6 +168,8 @@ model ExecutionLog {
   details   String?
   timestamp DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp(sort: Desc)])
 }
 
 model PasswordResetToken {

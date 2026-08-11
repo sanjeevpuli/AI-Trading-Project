@@ -98,6 +98,8 @@ export async function GET(request: NextRequest) {
         pnl: t.pnl,
         pnlPercentage: t.pnlPercentage,
         exitReason: t.exitReason,
+        fee: t.fee,
+        slippage: t.slippage,
         timestamp: t.exitTime.toISOString(),
       })),
     }, {

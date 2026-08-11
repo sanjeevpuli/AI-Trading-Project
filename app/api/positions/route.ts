@@ -19,6 +19,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
+import { closePosition } from "@/lib/services/backendTradingEngine";
+
 export async function POST(request: NextRequest) {
   const user = getSessionUser(request);
   if (!user) {
@@ -26,41 +28,24 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const position = await request.json();
-    if (!position?.id) {
-      return NextResponse.json({ ok: true, skipped: true });
+    const body = await request.json();
+    if (!body?.id) {
+      return NextResponse.json({ error: "Missing position id" }, { status: 400 });
     }
 
-    await prisma.position.upsert({
-      where: { id: position.id },
-      create: {
-        id: position.id,
-        userId: user.id,
-        symbol: position.symbol,
-        type: position.type,
-        entryPrice: position.entryPrice,
-        currentPrice: position.currentPrice,
-        amount: position.amount,
-        stopLoss: position.stopLoss,
-        takeProfit: position.takeProfit,
-        timestamp: position.timestamp ? new Date(position.timestamp) : new Date(),
-        pnl: position.pnl ?? 0,
-        pnlPercentage: position.pnlPercentage ?? 0,
-      },
-      update: {
-        currentPrice: position.currentPrice,
-        amount: position.amount,
-        stopLoss: position.stopLoss,
-        takeProfit: position.takeProfit,
-        pnl: position.pnl ?? 0,
-        pnlPercentage: position.pnlPercentage ?? 0,
+    // Only allow updating stopLoss and takeProfit
+    const position = await prisma.position.update({
+      where: { id: body.id, userId: user.id },
+      data: {
+        stopLoss: body.stopLoss !== undefined ? Number(body.stopLoss) : null,
+        takeProfit: body.takeProfit !== undefined ? Number(body.takeProfit) : null,
       },
     });
 
-    return NextResponse.json({ ok: true });
-  } catch (error) {
+    return NextResponse.json({ ok: true, position });
+  } catch (error: any) {
     console.error("POST /api/positions error:", error);
-    return NextResponse.json({ ok: false, error: String(error) });
+    return NextResponse.json({ ok: false, error: String(error.message || error) }, { status: 400 });
   }
 }
 
@@ -72,27 +57,22 @@ export async function DELETE(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
+  const exitPriceStr = searchParams.get("exitPrice");
+  const reason = searchParams.get("reason") || "MANUAL";
 
   if (!id) {
     return NextResponse.json({ error: "Missing position id" }, { status: 400 });
   }
+  
+  if (!exitPriceStr) {
+    return NextResponse.json({ error: "Missing exitPrice" }, { status: 400 });
+  }
 
   try {
-    const pos = await prisma.position.findFirst({
-      where: { id, userId: user.id },
-    });
-
-    if (!pos) {
-      return NextResponse.json({ error: "Position not found" }, { status: 404 });
-    }
-
-    await prisma.position.delete({
-      where: { id },
-    });
-
-    return NextResponse.json({ ok: true });
-  } catch (error) {
+    const result = await closePosition(user.id, id, Number(exitPriceStr), reason as any);
+    return NextResponse.json(result);
+  } catch (error: any) {
     console.error("DELETE /api/positions error:", error);
-    return NextResponse.json({ ok: false, error: String(error) });
+    return NextResponse.json({ ok: false, error: String(error.message || error) }, { status: 400 });
   }
 }

@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST – write/upsert an order record
+import { placeOrder } from "@/lib/services/backendTradingEngine";
+
+// POST – Execute a market order or create a pending limit order
 export async function POST(request: NextRequest) {
   const user = getSessionUser(request);
   if (!user) {
@@ -30,41 +32,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const order = await request.json();
-    if (!order?.id) {
-      return NextResponse.json({ ok: true, skipped: true });
+    const body = await request.json();
+    
+    // Validate order inputs
+    if (!body.symbol || !body.type || !body.orderType || !body.amount || !body.price) {
+      return NextResponse.json({ error: "Missing required order fields" }, { status: 400 });
     }
 
-    await prisma.order.upsert({
-      where: { id: order.id },
-      create: {
-        id: order.id,
-        userId: user.id,
-        symbol: order.symbol,
-        type: order.type,
-        orderType: order.orderType,
-        status: order.status,
-        amount: order.amount,
-        price: order.price,
-        stopLoss: order.stopLoss,
-        takeProfit: order.takeProfit,
-        createdAt: order.createdAt ? new Date(order.createdAt) : new Date(),
-        updatedAt: order.updatedAt ? new Date(order.updatedAt) : new Date(),
-      },
-      update: {
-        status: order.status,
-        amount: order.amount,
-        price: order.price,
-        stopLoss: order.stopLoss,
-        takeProfit: order.takeProfit,
-        updatedAt: new Date(),
-      },
+    const result = await placeOrder(user.id, {
+      symbol: body.symbol,
+      type: body.type,
+      orderType: body.orderType,
+      amount: Number(body.amount),
+      price: Number(body.price),
+      stopLoss: body.stopLoss ? Number(body.stopLoss) : undefined,
+      takeProfit: body.takeProfit ? Number(body.takeProfit) : undefined,
     });
 
-    return NextResponse.json({ ok: true });
-  } catch (error) {
+    return NextResponse.json(result);
+  } catch (error: any) {
     console.error("POST /api/orders error:", error);
-    return NextResponse.json({ ok: false, error: String(error) });
+    return NextResponse.json({ ok: false, error: String(error.message || error) }, { status: 400 });
   }
 }
 

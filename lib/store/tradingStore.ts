@@ -55,9 +55,9 @@ interface TradingStore {
   isWarmingUp: boolean;
   setHistoricalKlines: (symbol: string, klines: number[]) => void;
   updateKlineClose: (symbol: string, price: number, historyPrices: number[]) => void;
-  executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; orderType: "MARKET" | "LIMIT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => { success: boolean; error?: string };
-  cancelOrder: (id: string) => void;
-  closePosition: (id: string, reason?: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION") => void;
+  executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; orderType: "MARKET" | "LIMIT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => Promise<{ success: boolean; error?: string }>;
+  cancelOrder: (id: string) => Promise<void>;
+  closePosition: (id: string, reason?: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION") => Promise<void>;
   resetStore: () => void;
   
   // Analytics selector
@@ -364,11 +364,8 @@ export const useTradingStore = create<TradingStore>()(
 
         if (trigger) {
           // Auto close!
-          const { closedTrade, cashReturn } = closeSimulatedPosition(pos, price, trigger);
-          nextBalance += cashReturn;
-          nextHistory = [closedTrade, ...nextHistory];
-          closedPositions.push(pos.id);
-          return false; // Remove from list
+          get().closePosition(pos.id, trigger);
+          return false; // Remove from list optimistically
         }
 
         return true;
@@ -377,69 +374,20 @@ export const useTradingStore = create<TradingStore>()(
       // 3. Evaluate pending limit orders
       const triggeredOrders = evaluatePendingOrders(nextOrders, nextPrices);
       for (const order of triggeredOrders) {
-        // Pass through Risk Manager before processing
-        const riskValidation = validateOrderExecution(order, nextBalance, evaluatedPositions);
-        
-        if (!riskValidation.allowed) {
-          // If risk check fails, we cancel the order to prevent execution
-          console.warn(`Pending order ${order.id} failed risk check: ${riskValidation.error}`);
-          nextOrders = nextOrders.filter(o => o.id !== order.id);
-          if (typeof window !== "undefined") {
-            deleteOrder(order.id);
-          }
-          continue;
-        }
-
         // Execute it as market order now that it crossed
-        const result = executeSimulatedOrder(order, nextBalance);
-        if (result.success && result.position) {
-          const fillCost = order.amount * result.executionPrice;
-          const totalDebit = fillCost + result.fee;
-          nextBalance -= totalDebit;
-          evaluatedPositions = [result.position, ...evaluatedPositions];
-          
-          if (typeof window !== "undefined") {
-            syncPosition(result.position);
-            syncTrade({
-              id: "",
-              userId: "",
-              symbol: order.symbol,
-              type: order.type,
-              entryPrice: result.executionPrice,
-              exitPrice: result.executionPrice,
-              amount: order.amount,
-              pnl: 0,
-              pnlPercentage: 0,
-              entryTime: new Date().toISOString(),
-              exitTime: new Date().toISOString(),
-              exitReason: "MANUAL",
-              fee: result.fee,
-              slippage: result.slippageAmount,
-            } as Trade);
-            syncPortfolio({
-              id: "",
-              totalValue: nextBalance,
-              cash: nextBalance,
-              unrealizedPnL: 0,
-              realizedPnL: 0,
-              winRate: 0,
-              sharpeRatio: 0,
-              maxDrawdown: 0,
-              leverage: 1,
-              exposure: 0,
-              netBeta: 0,
-              valueAtRisk: 0,
-              equityCurve: [] as { time: string; value: number }[],
-            } as Portfolio);
-          }
-        }
+        get().cancelOrder(order.id); // delete pending
+        get().executeOrder({
+          symbol: order.symbol,
+          type: order.type,
+          orderType: "MARKET",
+          amount: order.amount,
+          price: nextPrices[order.symbol],
+          stopLoss: order.stopLoss,
+          takeProfit: order.takeProfit
+        });
         
-        // Remove from pending orders list
+        // Remove from pending orders list optimistically
         nextOrders = nextOrders.filter(o => o.id !== order.id);
-        
-        if (typeof window !== "undefined") {
-          deleteOrder(order.id);
-        }
       }
 
       // 4. Margin safety calculations / liquidation stop-outs
@@ -449,11 +397,7 @@ export const useTradingStore = create<TradingStore>()(
       if (liquidationCheck.liquidateAll) {
         // Force close all open perp contracts at current mark prices!
         evaluatedPositions.forEach((pos) => {
-          const currentMarkPrice = nextPrices[pos.symbol] || pos.currentPrice;
-          const { closedTrade, cashReturn } = closeSimulatedPosition(pos, currentMarkPrice, "LIQUIDATION");
-          nextBalance += cashReturn;
-          nextHistory = [closedTrade, ...nextHistory];
-          agentMemory.recordTrade(closedTrade);
+          get().closePosition(pos.id, "LIQUIDATION");
         });
         finalPositions = [];
         console.warn(liquidationCheck.message);
@@ -479,7 +423,7 @@ export const useTradingStore = create<TradingStore>()(
     },
 
     // Technical Candle stream close updater
-    updateKlineClose: (symbol, closePrice, historyPrices) => {
+    updateKlineClose: async (symbol, closePrice, historyPrices) => {
       const state = get();
       
       // Combine warmup historical klines with live websocket klines
@@ -558,8 +502,8 @@ export const useTradingStore = create<TradingStore>()(
           }
         });
 
-        // Dispatch simulated order using existing store action
-        const result = get().executeOrder(executionDecision);
+        // Dispatch order via backend API
+        const result = await get().executeOrder(executionDecision);
         if (!result.success && result.error) {
            agentMemory.recordRejection(result.error, decision);
         }
@@ -587,185 +531,53 @@ export const useTradingStore = create<TradingStore>()(
     },
 
     // Manual Trade Execution action
-    executeOrder: (order) => {
-      const state = get();
-      
-      // 1. Validate Order Risk Limits first
-      const riskValidation = validateOrderExecution(order, state.balance, state.positions);
-      if (!riskValidation.allowed) {
-        return { success: false, error: riskValidation.error };
-      }
-
-      if (order.orderType === "LIMIT") {
-        const newOrder: Order = {
-          id: `ORD-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-          symbol: order.symbol,
-          type: order.type,
-          orderType: "LIMIT",
-          status: "PENDING",
-          amount: order.amount,
-          price: order.price,
-          stopLoss: order.stopLoss,
-          takeProfit: order.takeProfit,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        const nextOrders = [newOrder, ...state.pendingOrders];
-        set({ pendingOrders: nextOrders });
-
-        if (isClient) {
-          localStorage.setItem("quant_orders_z", JSON.stringify(nextOrders));
+    executeOrder: async (order) => {
+      try {
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(order)
+        });
+        
+        const result = await res.json();
+        
+        if (!res.ok || !result.success) {
+          return { success: false, error: result.error || "Order execution failed on server" };
         }
 
-        if (typeof window !== "undefined") {
-          syncOrder(newOrder);
-        }
-
+        // Fetch fresh state from single source of truth
+        get().fetchDashboardData();
         return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message || String(err) };
       }
-
-      // 2. Compute fill slippage and taker exchange fees (MARKET orders)
-      const result = executeSimulatedOrder(order, state.balance);
-      if (!result.success || !result.position) {
-        return { success: false, error: result.error };
-      }
-
-      const orderQty = order.amount;
-      const fillCost = orderQty * result.executionPrice;
-      const totalDebit = fillCost + result.fee;
-
-      const nextBalance = state.balance - totalDebit;
-      const nextPositions = [result.position, ...state.positions];
-
-      set({
-        balance: nextBalance,
-        positions: nextPositions,
-      });
-
-      if (isClient) {
-        localStorage.setItem("quant_balance_z", nextBalance.toString());
-        localStorage.setItem("quant_positions_z", JSON.stringify(nextPositions));
-      }
-
-      // DB sync for order execution
-      if (typeof window !== "undefined") {
-        syncPortfolio({
-          id: "",
-          totalValue: nextBalance,
-          cash: nextBalance,
-          unrealizedPnL: 0,
-          realizedPnL: 0,
-          winRate: 0,
-          sharpeRatio: 0,
-          maxDrawdown: 0,
-          leverage: 1,
-          exposure: 0,
-          netBeta: 0,
-          valueAtRisk: 0,
-          equityCurve: [] as { time: string; value: number }[],
-        } as Portfolio);
-        // Record the trade
-        const tradeId = crypto.randomUUID();
-        const closedTrade: Trade = {
-          id: tradeId,
-          userId: "",
-          symbol: order.symbol,
-          type: order.type,
-          entryPrice: result.executionPrice,
-          exitPrice: result.executionPrice,
-          amount: order.amount,
-          pnl: 0,
-          pnlPercentage: 0,
-          entryTime: new Date().toISOString(),
-          exitTime: new Date().toISOString(),
-          exitReason: "MANUAL",
-          fee: result.fee,
-          slippage: 0,
-        };
-        syncTrade(closedTrade);
-        // Position sync
-        nextPositions.forEach((p) => syncPosition(p));
-      }
-
-      return { success: true };
     },
 
-    cancelOrder: (id) => {
-      const state = get();
-      const nextOrders = state.pendingOrders.filter((o) => o.id !== id);
-      set({ pendingOrders: nextOrders });
-      if (isClient) {
-        localStorage.setItem("quant_orders_z", JSON.stringify(nextOrders));
-      }
-      if (typeof window !== "undefined") {
-        deleteOrder(id);
+    cancelOrder: async (id) => {
+      try {
+        await fetch(`/api/orders?id=${id}`, { method: "DELETE" });
+        get().fetchDashboardData();
+      } catch (err) {
+        console.error("Cancel order error:", err);
       }
     },
 
     // Position Closing Action
-    closePosition: (id, reason = "MANUAL") => {
+    closePosition: async (id, reason = "MANUAL") => {
       const state = get();
       const pos = state.positions.find((p) => p.id === id);
       if (!pos) return;
 
       const latestPrice = state.prices[pos.symbol] || pos.currentPrice;
-      const { closedTrade, cashReturn } = closeSimulatedPosition(pos, latestPrice, reason);
+      
+      // Optimistically remove
+      set({ positions: state.positions.filter((p) => p.id !== id) });
 
-      const nextBalance = state.balance + cashReturn;
-      const nextPositions = state.positions.filter((p) => p.id !== id);
-      const nextHistory = [closedTrade, ...state.history];
-
-      // Record to Agent Memory for feedback loop
-      agentMemory.recordTrade(closedTrade);
-
-      set({
-        balance: nextBalance,
-        positions: nextPositions,
-        history: nextHistory,
-      });
-
-      if (isClient) {
-        localStorage.setItem("quant_balance_z", nextBalance.toString());
-        localStorage.setItem("quant_positions_z", JSON.stringify(nextPositions));
-        localStorage.setItem("quant_history_z", JSON.stringify(nextHistory));
-      }
-
-      // DB sync for position close
-      if (typeof window !== "undefined") {
-        syncPortfolio({
-          id: "",
-          totalValue: nextBalance,
-          cash: nextBalance,
-          unrealizedPnL: 0,
-          realizedPnL: 0,
-          winRate: 0,
-          sharpeRatio: 0,
-          maxDrawdown: 0,
-          leverage: 1,
-          exposure: 0,
-          netBeta: 0,
-          valueAtRisk: 0,
-          equityCurve: [] as { time: string; value: number }[],
-        } as Portfolio);
-        const tradeId = closedTrade.id || crypto.randomUUID();
-        syncTrade({
-          id: tradeId,
-          userId: "",
-          symbol: pos?.symbol ?? "",
-          type: pos?.type ?? "LONG",
-          entryPrice: pos?.entryPrice ?? 0,
-          exitPrice: latestPrice,
-          amount: pos?.amount ?? 0,
-          pnl: cashReturn - (pos?.entryPrice ?? 0) * (pos?.amount ?? 0),
-          pnlPercentage: 0,
-          entryTime: new Date().toISOString(),
-          exitTime: new Date().toISOString(),
-          exitReason: reason,
-          fee: 0,
-          slippage: 0,
-        } as Trade);
-        if (pos) deletePosition(pos.id);
+      try {
+        await fetch(`/api/positions?id=${id}&exitPrice=${latestPrice}&reason=${reason}`, { method: "DELETE" });
+        get().fetchDashboardData();
+      } catch (err) {
+        console.error("Close position error:", err);
       }
     },
 

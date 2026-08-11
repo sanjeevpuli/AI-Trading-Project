@@ -142,11 +142,11 @@ export default function TradingPanel() {
     }
   };
 
-  const handleConfirmOrder = () => {
+  const handleConfirmOrder = async () => {
     const slVal = useSl ? parseFloat(slPrice) : undefined;
     const tpVal = useTp ? parseFloat(tpPrice) : undefined;
 
-    const result = executeOrder({
+    const result = await executeOrder({
       symbol: selectedAsset,
       type: orderType,
       orderType: orderMode,

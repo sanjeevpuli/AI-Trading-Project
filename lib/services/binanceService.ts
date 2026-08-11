@@ -115,8 +115,9 @@ class BinanceWebsocketService {
         }
       };
 
-      this.socket.onerror = (err) => {
-        console.error("QuantAI: WebSocket error occurred:", err);
+      this.socket.onerror = () => {
+        // Network-level WebSocket failures are expected on restricted networks.
+        // Avoid noisy console.error — reconnection logic handles recovery.
         this.setStatus("ERROR");
       };
 
@@ -127,7 +128,7 @@ class BinanceWebsocketService {
         this.handleReconnect();
       };
     } catch (e) {
-      console.error("QuantAI: Failed to initialize WebSocket:", e);
+      console.warn("QuantAI: WebSocket initialization failed:", (e as Error)?.message ?? e);
       this.setStatus("ERROR");
       this.handleReconnect();
     }
@@ -209,7 +210,7 @@ class BinanceWebsocketService {
 
   private handleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.warn("QuantAI: Max WebSocket reconnection attempts reached. Falling back.");
+      console.info("QuantAI: Live WebSocket unavailable on this network. Using REST polling for market data.");
       return;
     }
 
