@@ -2,6 +2,7 @@
 class PortfolioModel {
   final double balance;
   final double startingBalance;
+  final double totalValue;
   final double unrealizedPnL;
   final double realizedPnL;
   final String netExposure;
@@ -14,6 +15,7 @@ class PortfolioModel {
   const PortfolioModel({
     required this.balance,
     required this.startingBalance,
+    required this.totalValue,
     required this.unrealizedPnL,
     required this.realizedPnL,
     required this.netExposure,
@@ -28,6 +30,7 @@ class PortfolioModel {
     return PortfolioModel(
       balance: (json['balance'] as num).toDouble(),
       startingBalance: (json['startingBalance'] as num? ?? 100000).toDouble(),
+      totalValue: (json['totalValue'] as num? ?? (json['balance'] as num).toDouble()).toDouble(),
       unrealizedPnL: (json['unrealizedPnL'] as num? ?? 0).toDouble(),
       realizedPnL: (json['realizedPnL'] as num? ?? 0).toDouble(),
       netExposure: json['netExposure']?.toString() ?? '0.00%',
@@ -39,6 +42,7 @@ class PortfolioModel {
     );
   }
 
+  // Purely UI formatting derived from backend authoritative values
   double get totalPnL => unrealizedPnL + realizedPnL;
   double get totalPnLPercent => startingBalance > 0 ? (totalPnL / startingBalance) * 100 : 0;
 }

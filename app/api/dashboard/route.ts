@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getAuthoritativePrices } from "@/lib/services/marketDataCache";
 
 export async function GET(request: NextRequest) {
   const user = getSessionUser(request);
@@ -27,36 +28,64 @@ export async function GET(request: NextRequest) {
       prisma.portfolioMetrics.findMany({
         where: { userId: user.id },
         orderBy: { timestamp: "asc" },
-        take: 100, // Fetch up to 100 historical data points
+        take: 100,
       })
     ]);
+
+    // Calculate authoritative MTM PnL on the backend
+    const symbols = Array.from(new Set(activePositions.map((pos) => pos.symbol)));
+    const authoritativePrices = await getAuthoritativePrices(symbols);
+
+    let totalUnrealizedPnL = 0;
+    const evaluatedPositions = activePositions.map((pos) => {
+      const currentPrice = authoritativePrices[pos.symbol] || pos.currentPrice;
+      
+      let pnl = 0;
+      if (pos.type === "LONG") {
+        pnl = (currentPrice - pos.entryPrice) * pos.amount;
+      } else {
+        pnl = (pos.entryPrice - currentPrice) * pos.amount;
+      }
+
+      const costBasis = pos.entryPrice * pos.amount;
+      const pnlPercentage = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+
+      totalUnrealizedPnL += pnl;
+
+      return {
+        id: pos.id,
+        symbol: pos.symbol,
+        type: pos.type,
+        entryPrice: pos.entryPrice,
+        currentPrice: currentPrice, // Use backend's latest validated price
+        amount: pos.amount,
+        pnl: pnl,
+        pnlPercentage: pnlPercentage,
+        stopLoss: pos.stopLoss,
+        takeProfit: pos.takeProfit,
+        timestamp: pos.timestamp.toISOString(),
+      };
+    });
+
+    const portfolioTotalValue = dbPortfolio 
+      ? dbPortfolio.cash + evaluatedPositions.reduce((sum, pos) => sum + pos.entryPrice * pos.amount, 0) + totalUnrealizedPnL
+      : 0;
 
     return NextResponse.json({
       portfolio: dbPortfolio ? {
         balance: dbPortfolio.cash,
         startingBalance: 100000.0,
-        unrealizedPnL: dbPortfolio.unrealizedPnL,
+        unrealizedPnL: totalUnrealizedPnL, // Authoritative Live PnL
         realizedPnL: dbPortfolio.realizedPnL,
         netExposure: dbPortfolio.exposure,
         winRate: dbPortfolio.winRate,
         sharpeRatio: dbPortfolio.sharpeRatio,
         maxDrawdown: dbPortfolio.maxDrawdown,
         systemLeverage: dbPortfolio.leverage,
+        totalValue: portfolioTotalValue,
         timestamp: new Date().toISOString(),
       } : null,
-      activePositions: activePositions.map((pos) => ({
-        id: pos.id,
-        symbol: pos.symbol,
-        type: pos.type,
-        entryPrice: pos.entryPrice,
-        currentPrice: pos.currentPrice,
-        amount: pos.amount,
-        pnl: pos.pnl,
-        pnlPercentage: pos.pnlPercentage,
-        stopLoss: pos.stopLoss,
-        takeProfit: pos.takeProfit,
-        timestamp: pos.timestamp.toISOString(),
-      })),
+      activePositions: evaluatedPositions,
       executionHistory: dbTrades.map((t) => ({
         id: t.id,
         symbol: t.symbol,
