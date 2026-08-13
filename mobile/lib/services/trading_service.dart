@@ -21,8 +21,8 @@ class TradingService {
     await _client.dio.post(ApiConfig.positions, data: positionData);
   }
 
-  Future<void> closePosition(String id, double exitPrice, {String reason = "MANUAL"}) async {
-    await _client.dio.delete('${ApiConfig.positions}?id=$id&exitPrice=$exitPrice&reason=$reason');
+  Future<void> closePosition(String id, {String reason = "MANUAL"}) async {
+    await _client.dio.delete('${ApiConfig.positions}?id=$id&reason=$reason');
   }
 
   // Orders
@@ -52,7 +52,7 @@ class TradingService {
     required String type, // LONG | SHORT
     required String orderType, // MARKET | LIMIT
     required double amount,
-    required double price,
+    double? price,
     double? stopLoss,
     double? takeProfit,
   }) async {
@@ -61,7 +61,7 @@ class TradingService {
       'type': type,
       'orderType': orderType,
       'amount': amount,
-      'price': price,
+      if (price != null) 'price': price,
       if (stopLoss != null) 'stopLoss': stopLoss,
       if (takeProfit != null) 'takeProfit': takeProfit,
     });

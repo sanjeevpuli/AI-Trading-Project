@@ -57,19 +57,14 @@ export async function DELETE(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
-  const exitPriceStr = searchParams.get("exitPrice");
   const reason = searchParams.get("reason") || "MANUAL";
 
   if (!id) {
     return NextResponse.json({ error: "Missing position id" }, { status: 400 });
   }
-  
-  if (!exitPriceStr) {
-    return NextResponse.json({ error: "Missing exitPrice" }, { status: 400 });
-  }
 
   try {
-    const result = await closePosition(user.id, id, Number(exitPriceStr), reason as any);
+    const result = await closePosition(user.id, id, undefined, reason as any);
     return NextResponse.json(result);
   } catch (error: any) {
     console.error("DELETE /api/positions error:", error);

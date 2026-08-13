@@ -151,7 +151,7 @@ export default function TradingPanel() {
       type: orderType,
       orderType: orderMode,
       amount: parseFloat(amount),
-      price: executionPrice,
+      price: orderMode === "LIMIT" ? executionPrice : undefined,
       stopLoss: slVal,
       takeProfit: tpVal,
     });

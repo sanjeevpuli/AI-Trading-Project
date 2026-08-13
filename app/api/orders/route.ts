@@ -35,8 +35,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Validate order inputs
-    if (!body.symbol || !body.type || !body.orderType || !body.amount || !body.price) {
+    if (!body.symbol || !body.type || !body.orderType || !body.amount) {
       return NextResponse.json({ error: "Missing required order fields" }, { status: 400 });
+    }
+    
+    if (body.orderType === "LIMIT" && body.price === undefined) {
+      return NextResponse.json({ error: "LIMIT orders require a price" }, { status: 400 });
     }
 
     const result = await placeOrder(user.id, {
@@ -44,7 +48,7 @@ export async function POST(request: NextRequest) {
       type: body.type,
       orderType: body.orderType,
       amount: Number(body.amount),
-      price: Number(body.price),
+      price: body.price !== undefined ? Number(body.price) : undefined,
       stopLoss: body.stopLoss ? Number(body.stopLoss) : undefined,
       takeProfit: body.takeProfit ? Number(body.takeProfit) : undefined,
     });

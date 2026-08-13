@@ -109,7 +109,6 @@ class PositionsScreen extends ConsumerWidget {
                           final service = ref.read(tradingServiceProvider);
                           await service.closePosition(
                             positions[i].id, 
-                            positions[i].currentPrice,
                             reason: "MANUAL",
                           );
                           ref.invalidate(positionsProvider);

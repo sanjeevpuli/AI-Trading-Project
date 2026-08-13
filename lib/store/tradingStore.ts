@@ -51,7 +51,7 @@ interface TradingStore {
   isWarmingUp: boolean;
   setHistoricalKlines: (symbol: string, klines: number[]) => void;
   updateKlineClose: (symbol: string, price: number, historyPrices: number[]) => void;
-  executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; orderType: "MARKET" | "LIMIT"; amount: number; price: number; stopLoss?: number; takeProfit?: number }) => Promise<{ success: boolean; error?: string }>;
+  executeOrder: (order: { symbol: string; type: "LONG" | "SHORT"; orderType: "MARKET" | "LIMIT"; amount: number; price?: number; stopLoss?: number; takeProfit?: number }) => Promise<{ success: boolean; error?: string }>;
   cancelOrder: (id: string) => Promise<void>;
   closePosition: (id: string, reason?: "MANUAL" | "STOP_LOSS" | "TAKE_PROFIT" | "LIQUIDATION") => Promise<void>;
   resetStore: () => void;
@@ -323,14 +323,12 @@ export const useTradingStore = create<TradingStore>()(
           const state = get();
           const pos = state.positions.find((p) => p.id === id);
           if (!pos) return;
-
-          const latestPrice = state.prices[pos.symbol] || pos.currentPrice;
           
           // Optimistically remove for snappier UI
           set({ positions: state.positions.filter((p) => p.id !== id) });
 
           try {
-            await fetch(`/api/positions?id=${id}&exitPrice=${latestPrice}&reason=${reason}`, { method: "DELETE" });
+            await fetch(`/api/positions?id=${id}&reason=${reason}`, { method: "DELETE" });
             get().fetchDashboardData();
           } catch (err) {
             console.error("Close position error:", err);

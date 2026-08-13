@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
-import { OrderType, PositionType, OrderStatus, ExitReason } from "@prisma/client";
+import { OrderType, PositionType, OrderStatus, ExitReason, Prisma } from "@prisma/client";
 import { calculatePositionPnL } from "../tradingEngine";
+import { getAuthoritativePrices, marketCache } from "./marketDataCache";
 
 const TAKER_FEE_PCT = 0.04;
 
@@ -15,10 +16,32 @@ export async function placeOrder(userId: string, orderData: {
   type: PositionType;
   orderType: OrderType;
   amount: number;
-  price: number;
+  price?: number; // Make price optional for MARKET orders
   stopLoss?: number;
   takeProfit?: number;
 }) {
+  let executionMarketPrice = 0;
+  let limitPrice = orderData.price;
+
+  if (orderData.orderType === "MARKET") {
+    // 1a. Validate freshness
+    const prices = await getAuthoritativePrices([orderData.symbol]);
+    const price = prices[orderData.symbol];
+    if (!price) {
+      throw new Error(`Failed to fetch authoritative market price for ${orderData.symbol}. Order rejected.`);
+    }
+    const now = Date.now();
+    if (now - marketCache.lastUpdated > 10000) {
+      throw new Error(`Market price for ${orderData.symbol} is too stale (>10s). Order rejected.`);
+    }
+    executionMarketPrice = price;
+  } else {
+    if (limitPrice === undefined) {
+      throw new Error("LIMIT orders require a trigger price.");
+    }
+    executionMarketPrice = limitPrice;
+  }
+
   return await prisma.$transaction(async (tx) => {
     // 1. Get user's portfolio
     const portfolio = await tx.portfolio.findUnique({
@@ -37,7 +60,7 @@ export async function placeOrder(userId: string, orderData: {
           orderType: orderData.orderType,
           status: "PENDING",
           amount: orderData.amount,
-          price: orderData.price,
+          price: limitPrice!,
           stopLoss: orderData.stopLoss,
           takeProfit: orderData.takeProfit,
         }
@@ -46,10 +69,10 @@ export async function placeOrder(userId: string, orderData: {
     }
 
     // 2. Execute Market Order
-    const { amount: slippageAmount } = calculateSlippage(orderData.price);
+    const { amount: slippageAmount } = calculateSlippage(executionMarketPrice);
     const executionPrice = orderData.type === "LONG" 
-      ? orderData.price + slippageAmount 
-      : orderData.price - slippageAmount;
+      ? executionMarketPrice + slippageAmount 
+      : executionMarketPrice - slippageAmount;
 
     const positionSizeUsd = orderData.amount * executionPrice;
     const fee = (positionSizeUsd * TAKER_FEE_PCT) / 100;
@@ -78,7 +101,7 @@ export async function placeOrder(userId: string, orderData: {
         data: {
           amount: newAmount,
           entryPrice: newEntryPrice,
-          currentPrice: orderData.price,
+          currentPrice: executionMarketPrice,
           stopLoss: orderData.stopLoss ?? existingPosition.stopLoss,
           takeProfit: orderData.takeProfit ?? existingPosition.takeProfit,
         }
@@ -90,7 +113,7 @@ export async function placeOrder(userId: string, orderData: {
           symbol: orderData.symbol,
           type: orderData.type,
           entryPrice: executionPrice,
-          currentPrice: orderData.price,
+          currentPrice: executionMarketPrice,
           amount: orderData.amount,
           stopLoss: orderData.stopLoss,
           takeProfit: orderData.takeProfit,
@@ -143,10 +166,10 @@ export async function placeOrder(userId: string, orderData: {
     });
 
     return { success: true, order, position, trade, portfolio: updatedPortfolio };
-  }, { maxWait: 20000, timeout: 20000 });
+  }, { maxWait: 20000, timeout: 20000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
-export async function closePosition(userId: string, positionId: string, exitPrice: number, reason: ExitReason) {
+export async function closePosition(userId: string, positionId: string, exitPrice: number | undefined, reason: ExitReason) {
   return await prisma.$transaction(async (tx) => {
     const position = await tx.position.findUnique({
       where: { id: positionId }
@@ -158,8 +181,24 @@ export async function closePosition(userId: string, positionId: string, exitPric
     });
     if (!portfolio) throw new Error("Portfolio not found");
 
-    const { amount: exitSlippageAmount } = calculateSlippage(exitPrice);
-    const finalExitPrice = position.type === "LONG" ? exitPrice - exitSlippageAmount : exitPrice + exitSlippageAmount;
+    let executionExitPrice = exitPrice;
+
+    if (executionExitPrice === undefined) {
+      // 1a. Validate freshness
+      const prices = await getAuthoritativePrices([position.symbol]);
+      const fetchedPrice = prices[position.symbol];
+      if (!fetchedPrice) {
+        throw new Error(`Failed to fetch authoritative market price for ${position.symbol}. Close rejected.`);
+      }
+      const now = Date.now();
+      if (now - marketCache.lastUpdated > 10000) {
+        throw new Error(`Market price for ${position.symbol} is too stale (>10s). Close rejected.`);
+      }
+      executionExitPrice = fetchedPrice;
+    }
+
+    const { amount: exitSlippageAmount } = calculateSlippage(executionExitPrice);
+    const finalExitPrice = position.type === "LONG" ? executionExitPrice - exitSlippageAmount : executionExitPrice + exitSlippageAmount;
 
     const exitPositionSizeUsd = position.amount * finalExitPrice;
     const fee = (exitPositionSizeUsd * TAKER_FEE_PCT) / 100;
@@ -201,5 +240,5 @@ export async function closePosition(userId: string, positionId: string, exitPric
     });
 
     return { success: true, trade, portfolio: updatedPortfolio, pnl };
-  }, { maxWait: 20000, timeout: 20000 });
+  }, { maxWait: 20000, timeout: 20000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
